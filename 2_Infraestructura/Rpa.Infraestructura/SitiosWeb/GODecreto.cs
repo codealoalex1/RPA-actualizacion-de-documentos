@@ -8,6 +8,7 @@ namespace Rpa.Infraestructura.SitiosWeb
     public class GODecreto : IExtractorWeb<GODecretoModel>
     {
         public string NombreSitio => "GACETA OFICIAL del Estado Plurinacional de Bolivia | Listado de decretos ";
+        public string UrlSitioWeb => "http://www.gacetaoficialdebolivia.gob.bo/normas/listadonor/11";
 
         public async Task<ResultadosModel<GODecretoModel>> ExtraerDatosAsync()
         {
@@ -43,9 +44,9 @@ namespace Rpa.Infraestructura.SitiosWeb
                     {
                         intento++;
                         
-                        await pagina.GotoAsync("http://www.gacetaoficialdebolivia.gob.bo/normas/listadonor/11", new PageGotoOptions
+                        await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions
                         {
-                            Timeout = 45000,
+                            Timeout = 50000,
                             WaitUntil = WaitUntilState.Load
                         });
 
@@ -53,7 +54,7 @@ namespace Rpa.Infraestructura.SitiosWeb
                     }
                     catch (TimeoutException ex)
                     {
-                        Console.WriteLine($"[TIMEOUT] Intento {intento}/{maxReintentos} falló en {NombreSitio}. Detalle: {ex.Message}");
+                        Console.WriteLine($"TIMEOUT: Intento {intento}/{maxReintentos} falló en {NombreSitio}. Detalle: {ex.Message}");
 
                         if (intento >= maxReintentos)
                         {

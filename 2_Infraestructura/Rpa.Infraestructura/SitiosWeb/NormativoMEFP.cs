@@ -8,6 +8,7 @@ namespace Rpa.Infraestructura.SitiosWeb
     public class NormativaMEFP : IExtractorWeb<MEFPModel>
     {
         public string NombreSitio => "Normativa Ministerio de Economía y Finanzas Públicas";
+        public string UrlSitioWeb => "https://www.economiayfinanzas.gob.bo/index.php/normativa?field_tipo_de_normativa_target_id=All&field_viceministerio_target_id=All&title=&body_value=&field_gestion_value=";
         public async Task<ResultadosModel<MEFPModel>> ExtraerDatosAsync()
         {
             ResultadosModel<MEFPModel> resultadosModel = new()
@@ -44,7 +45,7 @@ namespace Rpa.Infraestructura.SitiosWeb
                     {
                         intento++;
 
-                        await pagina.GotoAsync("http://www.gacetaoficialdebolivia.gob.bo/normas/listadonor/11", new PageGotoOptions
+                        await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions
                         {
                             Timeout = 45000,
                             WaitUntil = WaitUntilState.Load

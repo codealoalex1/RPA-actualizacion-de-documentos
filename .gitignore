@@ -1,0 +1,40 @@
+## ---------- Estándar de .NET ----------
+# Carpetas de compilación y salida
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+bld/
+[Bb]in/
+[Oo]bj/
+
+# Archivos de usuario y caché de Visual Studio
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Paquetes NuGet restaurados localmente
+.nuget/
+packages/
+
+## ---------- Especial para Playwright ----------
+# Descargas automáticas de navegadores en desarrollo
+.playwright/
+node_modules/
+playwright-report/
+test-results/
+
+## ---------- Archivos de Diagnóstico y Locales ----------
+# Capturas de pantalla o reportes locales del RPA
+*.png
+*.jpg
+*.log
+*.txt
+errores.txt
+screenshot_diagnostico.png
+
+# Configuraciones locales con credenciales de Azure (Evita filtraciones)
+appsettings.Development.json

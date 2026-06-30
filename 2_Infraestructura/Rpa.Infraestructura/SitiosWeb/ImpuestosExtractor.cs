@@ -11,6 +11,7 @@ public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
 {
     // Nombre único que identifica a este extractor en el sistema
     public string NombreSitio => "Servicio de Impuestos Nacionales | Entidad facilitadora del cumplimiento de las obligaciones tributarias";
+    public string UrlSitioWeb => "https://www.impuestos.gob.bo/index.php/rnd-2026/";
 
     public async Task<ResultadosModel<ImpuestosModel>> ExtraerDatosAsync()
     {
@@ -49,7 +50,7 @@ public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
                 {
                     intento++;
 
-                    await pagina.GotoAsync("http://www.gacetaoficialdebolivia.gob.bo/normas/listadonor/11", new PageGotoOptions
+                    await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions
                     {
                         Timeout = 45000,
                         WaitUntil = WaitUntilState.Load

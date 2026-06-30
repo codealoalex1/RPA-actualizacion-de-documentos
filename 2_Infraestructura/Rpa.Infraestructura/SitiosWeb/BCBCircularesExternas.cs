@@ -9,6 +9,7 @@ namespace Rpa.Infraestructura.SitiosWeb
     public class BCBCircularesExternas : IExtractorWeb<BCBCircularesExternasModel>
     {
         public string NombreSitio => "BCB Circulares Externas";
+        public string UrlSitioWeb => "https://www.bcb.gob.bo/?q=circulares-externas";
         public async Task<ResultadosModel<BCBCircularesExternasModel>> ExtraerDatosAsync()
         {
             ResultadosModel<BCBCircularesExternasModel> resultadosModel = new()
@@ -43,7 +44,7 @@ namespace Rpa.Infraestructura.SitiosWeb
                     {
                         intento++;
 
-                        await pagina.GotoAsync("http://www.gacetaoficialdebolivia.gob.bo/normas/listadonor/11", new PageGotoOptions
+                        await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions
                         {
                             Timeout = 45000,
                             WaitUntil = WaitUntilState.Load
