@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Playwright;
 using Rpa.Nucleo.Interfaces;
 using Rpa.Nucleo.Modelos;
@@ -7,8 +6,21 @@ namespace Rpa.Infraestructura.SitiosWeb
 {
     public class GODecreto : IExtractorWeb<GODecretoModel>
     {
-        public string NombreSitio => "GACETA OFICIAL del Estado Plurinacional de Bolivia | Listado de decretos ";
+        public string NombreSitio => "GACETA OFICIAL del Estado Plurinacional de Bolivia | Listado de decretos";
+
+        // Esta página externa trabaja por HTTP. No forzamos HTTPS.
         public string UrlSitioWeb => "http://www.gacetaoficialdebolivia.gob.bo/normas/listadonor/11";
+
+        private static string? ConvertirUrlAbsoluta(string? href)
+        {
+            if (string.IsNullOrWhiteSpace(href)) return href;
+
+            if (Uri.TryCreate(href, UriKind.Absolute, out var absoluta))
+                return absoluta.ToString();
+
+            var baseUri = new Uri("http://www.gacetaoficialdebolivia.gob.bo");
+            return new Uri(baseUri, href).ToString();
+        }
 
         public async Task<ResultadosModel<GODecretoModel>> ExtraerDatosAsync()
         {
@@ -19,90 +31,137 @@ namespace Rpa.Infraestructura.SitiosWeb
             };
 
             using var playwright = await Playwright.CreateAsync();
+
             await using var navegador = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
-                Headless = true
+                Headless = true,
+                Args = new[]
+                {
+                    "--allow-running-insecure-content"
+                }
             });
 
             var contexto = await navegador.NewContextAsync(new BrowserNewContextOptions
             {
                 UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 }
+                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+                Locale = "es-BO",
+                ServiceWorkers = ServiceWorkerPolicy.Block,
+                ExtraHTTPHeaders = new Dictionary<string, string>
+                {
+                    ["Accept-Language"] = "es-BO,es;q=0.9,en;q=0.8"
+                }
+            });
+
+            // Evita cargar imágenes, fuentes y multimedia.
+            // Esto ayuda a que la página HTTP no se quede bloqueada cargando recursos innecesarios.
+            await contexto.RouteAsync("**/*", async ruta =>
+            {
+                string tipo = ruta.Request.ResourceType;
+
+                if (tipo == "image" || tipo == "font" || tipo == "media")
+                    await ruta.AbortAsync();
+                else
+                    await ruta.ContinueAsync();
             });
 
             var pagina = await contexto.NewPageAsync();
 
+            pagina.SetDefaultTimeout(30000);
+            pagina.SetDefaultNavigationTimeout(60000);
+
             try
             {
                 int maxReintentos = 3;
-                int intento = 0;
-                bool exitoNavegacion = false;
+                Exception? ultimoError = null;
+                IResponse? respuesta = null;
 
-                while (intento < maxReintentos && !exitoNavegacion)
+                for (int intento = 1; intento <= maxReintentos; intento++)
                 {
                     try
                     {
-                        intento++;
-                        
-                        await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions
+                        Console.WriteLine($"Intentando abrir Gaceta Decretos por HTTP: {UrlSitioWeb}. Intento {intento}/{maxReintentos}");
+
+                        respuesta = await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions
                         {
-                            Timeout = 50000,
-                            WaitUntil = WaitUntilState.Load
+                            Timeout = 60000,
+                            WaitUntil = WaitUntilState.DOMContentLoaded
                         });
 
-                        exitoNavegacion = true; 
+                        if (respuesta == null || respuesta.Status < 400)
+                            break;
+
+                        throw new Exception($"La página respondió con estado HTTP {respuesta.Status}");
                     }
-                    catch (TimeoutException ex)
+                    catch (Exception ex)
                     {
-                        Console.WriteLine($"TIMEOUT: Intento {intento}/{maxReintentos} falló en {NombreSitio}. Detalle: {ex.Message}");
+                        ultimoError = ex;
 
-                        if (intento >= maxReintentos)
-                        {
-                            throw new Exception($"Saturación de red: Imposible conectar a {NombreSitio} tras {maxReintentos} intentos.");
-                        }
+                        Console.WriteLine($"Fallo intento {intento}/{maxReintentos} en Gaceta Decretos: {ex.Message}");
 
-                        // Tiempo de espera exponencial: Intento 1 = 3s, Intento 2 = 6s
-                        int tiempoEspera = intento * 3000;
-                        Console.WriteLine($"Esperando {tiempoEspera / 1000} segundos antes de reintentar...");
-                        await Task.Delay(tiempoEspera);
+                        if (intento == maxReintentos)
+                            throw new Exception($"No se pudo abrir {NombreSitio} por HTTP después de {maxReintentos} intentos.", ultimoError);
+
+                        await Task.Delay(intento * 3000);
                     }
                 }
+
+                await pagina.Locator("#titulos-bloque .row").First.WaitForAsync(new LocatorWaitForOptions
+                {
+                    Timeout = 20000
+                });
 
                 var decretos = await pagina.Locator("#titulos-bloque .row").AllAsync();
 
-                if (decretos.Count > 0)
+                foreach (var decreto in decretos)
                 {
-                    foreach (var decreto in decretos)
+                    GODecretoModel gODecretoModel = new();
+
+                    var cuerpo = decreto.Locator("div .card .card-body");
+
+                    if (await cuerpo.CountAsync() == 0)
+                        continue;
+
+                    var textoMeta = await cuerpo.Locator(".card-text.texto-default").InnerTextAsync();
+
+                    var partes = textoMeta.Split(" | Fecha de Publicación: ");
+
+                    if (partes.Length < 2)
+                        continue;
+
+                    string fecha = partes[1].Split("|")[0].Trim();
+
+                    if (resultadosModel.convertirHora(fecha) < resultadosModel.convertirHora("2026-05-29"))
+                        continue;
+
+                    var partesEdicion = partes[0].Split(": ");
+
+                    string edicion = partesEdicion.Length > 1
+                        ? partesEdicion[1].Trim()
+                        : partes[0].Trim();
+
+                    gODecretoModel.Edicion = edicion;
+                    gODecretoModel.FechaPublicacion = fecha;
+                    gODecretoModel.Titulo = await cuerpo.Locator("h6 b").InnerTextAsync();
+                    gODecretoModel.Descripcion = await cuerpo.Locator(".contentpaneopen p").InnerTextAsync();
+
+                    var enlaces = await decreto.Locator("div .card .card-footer a").AllAsync();
+
+                    if (enlaces.Count >= 3)
                     {
-                        GODecretoModel gODecretoModel = new();
-                        var cuerpo = decreto.Locator("div .card .card-body");
-
-                        if (await cuerpo.CountAsync() == 0) continue;
-
-                        var cuerpoTexto = (await cuerpo.Locator(".card-text.texto-default").InnerTextAsync()).Split(" | Fecha de Publicación: ");
-                        string fecha = cuerpoTexto[1].Split("|")[0];
-
-                        if (resultadosModel.convertirHora(fecha) < resultadosModel.convertirHora("2026-05-29")) continue;
-
-                        string edicion = cuerpoTexto[0].Split(": ")[1];
-
-                        gODecretoModel.Edicion = edicion;
-                        gODecretoModel.FechaPublicacion = fecha;
-
-                        gODecretoModel.Titulo = await cuerpo.Locator("h6 b").InnerTextAsync();
-                        gODecretoModel.Descripcion = await cuerpo.Locator(".contentpaneopen p").InnerTextAsync();
-
-                        var enlaces = await decreto.Locator("div .card .card-footer a").AllAsync();
-                        gODecretoModel.UrlVisual = await enlaces[0].GetAttributeAsync("href");
-                        gODecretoModel.UrlWord = await enlaces[1].GetAttributeAsync("href");
-                        gODecretoModel.UrlPdf = await enlaces[2].GetAttributeAsync("href");
-
-                        resultadosModel.ContenidoIdentificado.Add(gODecretoModel);
+                        gODecretoModel.UrlVisual = ConvertirUrlAbsoluta(await enlaces[0].GetAttributeAsync("href"));
+                        gODecretoModel.UrlWord = ConvertirUrlAbsoluta(await enlaces[1].GetAttributeAsync("href"));
+                        gODecretoModel.UrlPdf = ConvertirUrlAbsoluta(await enlaces[2].GetAttributeAsync("href"));
                     }
+
+                    resultadosModel.ContenidoIdentificado.Add(gODecretoModel);
                 }
+
+                Console.WriteLine($"Gaceta Decretos procesada. Registros encontrados: {resultadosModel.ContenidoIdentificado.Count}");
             }
             catch (Exception ex)
             {
+                resultadosModel.Status = $"Error: {ex.Message}";
                 Console.WriteLine(ex);
             }
 
