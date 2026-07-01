@@ -10,5 +10,5 @@ public interface IExtractorWeb<T>
     string UrlSitioWeb { get; }
 
     // Método principal que ejecutará Playwright internamente para extraer los datos
-    Task<ResultadosModel<T>> ExtraerDatosAsync();
+    Task<ResultadosModel<T>> ExtraerDatosAsync(long criterio);
 }

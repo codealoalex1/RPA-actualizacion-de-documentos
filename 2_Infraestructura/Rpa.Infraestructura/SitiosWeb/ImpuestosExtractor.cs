@@ -13,7 +13,7 @@ public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
     public string NombreSitio => "Servicio de Impuestos Nacionales | Entidad facilitadora del cumplimiento de las obligaciones tributarias";
     public string UrlSitioWeb => "https://www.impuestos.gob.bo/index.php/rnd-2026/";
 
-    public async Task<ResultadosModel<ImpuestosModel>> ExtraerDatosAsync()
+    public async Task<ResultadosModel<ImpuestosModel>> ExtraerDatosAsync(long dateTime)
     {
         
         var resultado = new ResultadosModel<ImpuestosModel>
@@ -92,7 +92,7 @@ public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
 
                     // Condicional para verificar cuales son los documentos más recientes
                     // Cambiar DateTime.Today.Ticks por la fecha a evaluar 
-                    if (resultado.convertirHora(fecha) < resultado.convertirHora("2026-05-29"))
+                    if (resultado.convertirHora(fecha) <= dateTime)
                     {
                         continue;
                     }

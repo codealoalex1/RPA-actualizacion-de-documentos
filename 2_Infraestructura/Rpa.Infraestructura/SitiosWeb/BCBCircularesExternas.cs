@@ -10,7 +10,7 @@ namespace Rpa.Infraestructura.SitiosWeb
     {
         public string NombreSitio => "BCB Circulares Externas";
         public string UrlSitioWeb => "https://www.bcb.gob.bo/?q=circulares-externas";
-        public async Task<ResultadosModel<BCBCircularesExternasModel>> ExtraerDatosAsync()
+        public async Task<ResultadosModel<BCBCircularesExternasModel>> ExtraerDatosAsync(long dateTime)
         {
             ResultadosModel<BCBCircularesExternasModel> resultadosModel = new()
             {
@@ -83,7 +83,7 @@ namespace Rpa.Infraestructura.SitiosWeb
                         string[] fechaCompleta = (await resolucion.Locator("div .bcb_date span").InnerTextAsync()).Split("- ");
                         string[] fechaLiteral = fechaCompleta[0].Split(", ");
                         string fecha = fechaLiteral[1] + " " + fechaLiteral[2] + fechaCompleta[1];
-                        if (resultadosModel.convertirHora(fecha) < resultadosModel.convertirHora("2026-05-29")) continue;
+                        if (resultadosModel.convertirHora(fecha) <= dateTime) continue;
 
                         bCBCircularesExternasModel.Fecha = fecha;
 

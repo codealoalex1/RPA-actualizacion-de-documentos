@@ -33,29 +33,22 @@ public class AlmacenamientoBlob : IAlmacenamientoServicio
         try
         {
             var clienteContenedor = new BlobContainerClient(_cadenaConexion, _nombreContenedor);
-
-            // Construimos la ruta jerárquica (ej: Impuestos_RND_2026/ultimo_estado.json)
             string rutaBlob = $"{nombreSitio}/{nombreArchivo}";
             var clienteBlob = clienteContenedor.GetBlobClient(rutaBlob);
 
-            // Si el archivo no existe en Azure (primera corrida del robot), devolvemos null controladamente
             if (!await clienteBlob.ExistsAsync())
             {
                 return null;
             }
 
-            // Descargamos el archivo como un flujo de memoria (Stream)
             var respuestaDownload = await clienteBlob.DownloadStreamingAsync();
-
-            // 2. CORREGIDO: Colocamos el 'using' directamente en el Stream de contenido
             using var flujoBlob = respuestaDownload.Value.Content;
 
-            // 3. Deserializamos usando el flujo de datos limpio
-            return await JsonSerializer.DeserializeAsync<dynamic>(flujoBlob, _opcionesJson);
+            // CAMBIO AQUÍ: Deserializamos directamente al tipo ResultadosModel<T> esperado
+            return await JsonSerializer.DeserializeAsync<ResultadosModel<T>>(flujoBlob, _opcionesJson);
         }
         catch (Exception ex)
         {
-            // Lanzamos una excepción personalizada o descriptiva para que el Worker la capture en sus logs
             throw new InvalidOperationException($"Error crítico al descargar el estado desde Azure Blob Storage para el sitio '{nombreSitio}'.", ex);
         }
     }
@@ -83,6 +76,43 @@ public class AlmacenamientoBlob : IAlmacenamientoServicio
         catch (Exception ex)
         {
             throw new InvalidOperationException($"Error crítico al subir el nuevo estado hacia Azure Blob Storage para el sitio '{nombreSitio}'.", ex);
+        }
+    }
+    public async Task GuardarYRotarEstadoAsync<T>(ResultadosModel<T> nuevosResultados, string nombreSitio)
+    {
+        try
+        {
+            var clienteContenedor = new BlobContainerClient(_cadenaConexion, _nombreContenedor);
+
+            // Construimos las rutas jerárquicas en el Storage (ej: GacetaDecretos/nuevo.json)
+            string rutaBlobNuevo = $"{nombreSitio}/nuevo.json";
+            string rutaBlobAntiguo = $"{nombreSitio}/antiguo.json";
+
+            var blobNuevoClient = clienteContenedor.GetBlobClient(rutaBlobNuevo);
+            var blobAntiguoClient = clienteContenedor.GetBlobClient(rutaBlobAntiguo);
+
+            // 1. ROTACIÓN: Si ya existe un "nuevo.json", lo clonamos/movemos a "antiguo.json"
+            if (await blobNuevoClient.ExistsAsync())
+            {
+                var operacionCopia = await blobAntiguoClient.StartCopyFromUriAsync(blobNuevoClient.Uri);
+
+                await operacionCopia.WaitForCompletionAsync();
+
+                await blobNuevoClient.DeleteAsync();
+                Console.WriteLine($"[Storage] Estado anterior rotado con éxito a: {rutaBlobAntiguo}");
+            }
+
+            using var flujoMemoria = new MemoryStream();
+            await JsonSerializer.SerializeAsync(flujoMemoria, nuevosResultados, _opcionesJson);
+
+            flujoMemoria.Position = 0;
+
+            await blobNuevoClient.UploadAsync(flujoMemoria, overwrite: true);
+            Console.WriteLine($"[Storage] Nuevo estado guardado con éxito en: {rutaBlobNuevo}");
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Error crítico al rotar y guardar el estado en Azure Blob Storage para el sitio '{nombreSitio}'.", ex);
         }
     }
 }

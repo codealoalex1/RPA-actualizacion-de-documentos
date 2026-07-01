@@ -1,5 +1,6 @@
 using System;
 using System.Net.Http;
+using System.Runtime.Serialization;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Rpa.Infraestructura.Azure;
 using Rpa.Infraestructura.SitiosWeb;
+using Rpa.Infraestructura.Utilidades;
 using Rpa.Nucleo.Interfaces;
 using Rpa.Nucleo.Modelos;
 
@@ -45,56 +47,13 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Servicio RPA en Azure Container Apps Iniciado.");
-
-        // --- AUDITORÍA DE RED INICIAL ---
-        try
-        {
-            using var client = new HttpClient();
-            client.Timeout = TimeSpan.FromSeconds(10);
-            var response = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, "http://www.gacetaoficialdebolivia.gob.bo"), stoppingToken);
-            _logger.LogInformation("[AUDITORÍA RED] Conexión exitosa a la Gaceta. Código Estado: {code}", response.StatusCode);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError("[AUDITORÍA RED] Fallo crítico de salida a internet o DNS: {message}", ex.Message);
-            if (ex.InnerException != null)
-            {
-                _logger.LogError("[AUDITORÍA RED] Detalle interno: {inner}", ex.InnerException.Message);
-            }
-        }
-
-        _logger.LogInformation("=== Iniciando ciclo único de extracción RPA ===");
-
-        // --- 1. PROCESAR IMPUESTOS ---
-        try
-        {
-            _logger.LogInformation("Ejecutando: [{sitio}]", _impuestosExtractor.NombreSitio);
-            var resImpuestos = await _impuestosExtractor.ExtraerDatosAsync();
-            await _almacenamiento.GuardarEstadoAsync<ImpuestosModel>(resImpuestos, _impuestosExtractor.NombreSitio, $"documento_{_impuestosExtractor.NombreSitio}.json");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error en Impuestos.");
-        }
-
-        // --- 2. PROCESAR MEFP ---
-        try
-        {
-            _logger.LogInformation("Ejecutando: [{sitio}]", _mefpExtractor.NombreSitio);
-            var resMefp = await _mefpExtractor.ExtraerDatosAsync();
-            await _almacenamiento.GuardarEstadoAsync<MEFPModel>(resMefp, _mefpExtractor.NombreSitio, $"documento_{_mefpExtractor.NombreSitio}.json");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error en MEFP.");
-        }
+        /* _logger.LogInformation("Servicio RPA en Azure Container Apps Iniciado.");
 
         // --- 3. PROCESAR GACETA DECRETOS ---
         try
         {
             _logger.LogInformation("Ejecutando: [{sitio}]", _goDecreto.NombreSitio);
-            var goDecreto = await _goDecreto.ExtraerDatosAsync();
+            var goDecreto = await _goDecreto.ExtraerDatosAsync(1);
             await _almacenamiento.GuardarEstadoAsync<GODecretoModel>(goDecreto, _goDecreto.NombreSitio, $"documento_{_goDecreto.NombreSitio}.json");
         }
         catch (Exception ex)
@@ -106,20 +65,87 @@ public class Worker : BackgroundService
         try
         {
             _logger.LogInformation("Ejecutando: [{sitio}]", _goLeyes.NombreSitio);
-            var goLeyes = await _goLeyes.ExtraerDatosAsync();
+            var goLeyes = await _goLeyes.ExtraerDatosAsync(1);
             await _almacenamiento.GuardarEstadoAsync<GOLeyModel>(goLeyes, _goLeyes.NombreSitio, $"documento_{_goLeyes.NombreSitio}.json");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error en Gaceta Leyes.");
+        } */
+        // --- 1. PROCESAR IMPUESTOS ---
+        try
+        {
+            _logger.LogInformation("Ejecutando: [{sitio}]", _impuestosExtractor.NombreSitio);
+            var modeloVacio = new ResultadosModel<ImpuestosModel>();
+
+            var estadoActual = await _almacenamiento.ObtenerUltimoEstadoAsync<ImpuestosModel>(_impuestosExtractor.NombreSitio, "nuevo.json");
+
+            long criterio = GestorEstadoRpa.ObtenerFechaCriterio<ImpuestosModel>(
+                estadoActual,
+                x => x.Fecha,
+                modeloVacio.convertirHora
+            );
+
+            var resImpuestos = await _impuestosExtractor.ExtraerDatosAsync(criterio);
+            if (resImpuestos.ContenidoIdentificado.Count > 0)
+            {
+                await _almacenamiento.GuardarYRotarEstadoAsync<ImpuestosModel>(resImpuestos, _impuestosExtractor.NombreSitio);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error en Impuestos.");
+        }
+
+        // --- 2. PROCESAR MEFP ---
+        try
+        {
+            _logger.LogInformation("Ejecutando: [{sitio}]", _mefpExtractor.NombreSitio);
+            var modeloVacio = new ResultadosModel<MEFPModel>();
+
+            var estadoActual = await _almacenamiento.ObtenerUltimoEstadoAsync<MEFPModel>(_mefpExtractor.NombreSitio, "nuevo.json");
+
+            long criterio = GestorEstadoRpa.ObtenerFechaCriterio<MEFPModel>(
+                estadoActual,
+                x => x.FechaPublicacion,
+                modeloVacio.convertirHora
+            );
+
+            Console.WriteLine(new DateTime(criterio));
+
+            var resMefp = await _mefpExtractor.ExtraerDatosAsync(criterio);
+            if (resMefp.ContenidoIdentificado.Count > 0)
+            {
+                await _almacenamiento.GuardarYRotarEstadoAsync<MEFPModel>(resMefp, _mefpExtractor.NombreSitio);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error en MEFP.");
         }
 
         // --- 5. PROCESAR BCB CIRCULARES ---
         try
         {
             _logger.LogInformation("Ejecutando: [{sitio}]", _bcbCE.NombreSitio);
-            var bcbCircExternas = await _bcbCE.ExtraerDatosAsync();
-            await _almacenamiento.GuardarEstadoAsync<BCBCircularesExternasModel>(bcbCircExternas, _bcbCE.NombreSitio, $"documento_{_bcbCE.NombreSitio}.json");
+            var modeloVacio = new ResultadosModel<BCBCircularesExternasModel>();
+
+            // REUTILIZACIÓN: Llamamos al mismo servicio con otro modelo
+            var estadoActual = await _almacenamiento.ObtenerUltimoEstadoAsync<BCBCircularesExternasModel>(_bcbCE.NombreSitio, "nuevo.json");
+
+            // LLAMADA AL GESTOR GENERAL: Cambiando únicamente el tipo de modelo
+            long criterio = GestorEstadoRpa.ObtenerFechaCriterio<BCBCircularesExternasModel>(
+                estadoActual,
+                x => x.Fecha,
+                modeloVacio.convertirHora
+            );
+
+            var bcbCircExternas = await _bcbCE.ExtraerDatosAsync(criterio);
+
+            if (bcbCircExternas.ContenidoIdentificado.Count > 0)
+            {
+                await _almacenamiento.GuardarYRotarEstadoAsync<BCBCircularesExternasModel>(bcbCircExternas, _bcbCE.NombreSitio);
+            }
         }
         catch (Exception ex)
         {

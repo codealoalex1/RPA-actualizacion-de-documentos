@@ -9,7 +9,7 @@ namespace Rpa.Infraestructura.SitiosWeb
     {
         public string NombreSitio => "Normativa Ministerio de Economía y Finanzas Públicas";
         public string UrlSitioWeb => "https://www.economiayfinanzas.gob.bo/index.php/normativa?field_tipo_de_normativa_target_id=All&field_viceministerio_target_id=All&title=&body_value=&field_gestion_value=";
-        public async Task<ResultadosModel<MEFPModel>> ExtraerDatosAsync()
+        public async Task<ResultadosModel<MEFPModel>> ExtraerDatosAsync(long dateTime)
         {
             ResultadosModel<MEFPModel> resultadosModel = new()
             {
@@ -78,7 +78,7 @@ namespace Rpa.Infraestructura.SitiosWeb
                         MEFPModel mEFPModel = new();
                         var columnas = await fila.Locator("td").AllAsync();
                         string fecha = await columnas[9].InnerTextAsync();
-                        if (await columnas[5].InnerTextAsync() != "2026" || resultadosModel.convertirHora(fecha) < resultadosModel.convertirHora("2026-05-29"))
+                        if (await columnas[5].InnerTextAsync() != "2026" || resultadosModel.convertirHora(fecha) <= dateTime)
                         {
                             continue;
                         }
