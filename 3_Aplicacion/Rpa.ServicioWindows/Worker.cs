@@ -22,6 +22,7 @@ public class Worker : BackgroundService
     private readonly GODecreto _goDecreto;
     private readonly GOLeyes _goLeyes;
     private readonly BCBCircularesExternas _bcbCE;
+    private readonly BCBResoluciones _bcbR;
     private readonly JsonSerializerOptions _opcionesJson;
     private readonly IAlmacenamientoServicio _almacenamiento;
 
@@ -32,6 +33,7 @@ public class Worker : BackgroundService
         GODecreto gODecreto,
         GOLeyes gOLeyes,
         BCBCircularesExternas bCBCircularesExternas,
+        BCBResoluciones bCBResoluciones,
         IAlmacenamientoServicio almacenamientoBlob
         )
     {
@@ -41,6 +43,7 @@ public class Worker : BackgroundService
         _goDecreto = gODecreto;
         _goLeyes = gOLeyes;
         _bcbCE = bCBCircularesExternas;
+        _bcbR = bCBResoluciones;
         _almacenamiento = almacenamientoBlob;
         _opcionesJson = new JsonSerializerOptions { WriteIndented = true };
     }
@@ -86,7 +89,10 @@ public class Worker : BackgroundService
                 modeloVacio.convertirHora
             );
 
-            var resImpuestos = await _impuestosExtractor.ExtraerDatosAsync(criterio);
+            Console.WriteLine(new DateTime(criterio));
+
+            string identificador = estadoActual.ContenidoIdentificado.Find(x=>modeloVacio.convertirHora(x.Fecha)==criterio).Titulo;
+            var resImpuestos = await _impuestosExtractor.ExtraerDatosAsync(criterio, identificador);
             if (resImpuestos.ContenidoIdentificado.Count > 0)
             {
                 await _almacenamiento.GuardarYRotarEstadoAsync<ImpuestosModel>(resImpuestos, _impuestosExtractor.NombreSitio);
@@ -110,10 +116,9 @@ public class Worker : BackgroundService
                 x => x.FechaPublicacion,
                 modeloVacio.convertirHora
             );
+            string identificador = estadoActual.ContenidoIdentificado.Find(x=>modeloVacio.convertirHora(x.FechaPublicacion)==criterio).Titulo;
 
-            Console.WriteLine(new DateTime(criterio));
-
-            var resMefp = await _mefpExtractor.ExtraerDatosAsync(criterio);
+            var resMefp = await _mefpExtractor.ExtraerDatosAsync(criterio, identificador);
             if (resMefp.ContenidoIdentificado.Count > 0)
             {
                 await _almacenamiento.GuardarYRotarEstadoAsync<MEFPModel>(resMefp, _mefpExtractor.NombreSitio);
@@ -140,11 +145,42 @@ public class Worker : BackgroundService
                 modeloVacio.convertirHora
             );
 
-            var bcbCircExternas = await _bcbCE.ExtraerDatosAsync(criterio);
+            string identificador = estadoActual.ContenidoIdentificado.Find(x=>modeloVacio.convertirHora(x.Fecha)==criterio).Titulo;
+            var bcbCircExternas = await _bcbCE.ExtraerDatosAsync(criterio, identificador);
 
             if (bcbCircExternas.ContenidoIdentificado.Count > 0)
             {
                 await _almacenamiento.GuardarYRotarEstadoAsync<BCBCircularesExternasModel>(bcbCircExternas, _bcbCE.NombreSitio);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error grave en BCB Circulares.");
+        }
+
+        // --- 6. PROCESAR BCB RESOLUCIONES ---
+        try
+        {
+            _logger.LogInformation("Ejecutando: [{sitio}]", _bcbR.NombreSitio);
+            var modeloVacio = new ResultadosModel<BCBResolucionesModel>();
+
+            // REUTILIZACIÓN: Llamamos al mismo servicio con otro modelo
+            var estadoActual = await _almacenamiento.ObtenerUltimoEstadoAsync<BCBResolucionesModel>(_bcbR.NombreSitio, "nuevo.json");
+
+            // LLAMADA AL GESTOR GENERAL: Cambiando únicamente el tipo de modelo
+            long criterio = GestorEstadoRpa.ObtenerFechaCriterio<BCBResolucionesModel>(
+                estadoActual,
+                x => x.FechaPublicacion,
+                modeloVacio.convertirHora
+            );
+
+            string identificador = estadoActual.ContenidoIdentificado.Find(x=>modeloVacio.convertirHora(x.FechaPublicacion)==criterio).Resolucion;
+
+            var bcbResoluciones = await _bcbR.ExtraerDatosAsync(criterio, identificador);
+
+            if (bcbResoluciones.ContenidoIdentificado.Count > 0)
+            {
+                await _almacenamiento.GuardarYRotarEstadoAsync<BCBResolucionesModel>(bcbResoluciones, _bcbR.NombreSitio);
             }
         }
         catch (Exception ex)

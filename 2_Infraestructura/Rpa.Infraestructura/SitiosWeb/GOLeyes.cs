@@ -10,7 +10,7 @@ namespace Rpa.Infraestructura.SitiosWeb
         public string NombreSitio => "GACETA OFICIAL del Estado Plurinacional de Bolivia | Listado de leyes ";
         public string UrlSitioWeb => "www.gacetaoficialdebolivia.gob.bo/normas/listadonor/10";
 
-        public async Task<ResultadosModel<GOLeyModel>> ExtraerDatosAsync(long dateTime)
+        public async Task<ResultadosModel<GOLeyModel>> ExtraerDatosAsync(long dateTime, string id)
         {
             ResultadosModel<GOLeyModel> resultadosModel = new()
             {
@@ -82,15 +82,16 @@ namespace Rpa.Infraestructura.SitiosWeb
 
                         var cuerpoTexto = (await cuerpo.Locator(".card-text.texto-default").InnerTextAsync()).Split(" | Fecha de Publicación: ");
                         string fecha = cuerpoTexto[1].Split("|")[0];
+                        string titulo = await cuerpo.Locator("h6 b").InnerTextAsync();
 
-                        if (resultadosModel.convertirHora(fecha) <= dateTime) continue;
+                        if (resultadosModel.convertirHora(fecha) < dateTime || titulo == id) continue;
 
                         string edicion = cuerpoTexto[0].Split(": ")[1];
 
                         GOLeyModel.Edicion = edicion;
                         GOLeyModel.FechaPublicacion = fecha;
 
-                        GOLeyModel.Titulo = await cuerpo.Locator("h6 b").InnerTextAsync();
+                        GOLeyModel.Titulo = titulo;
                         GOLeyModel.Descripcion = await cuerpo.Locator(".contentpaneopen p").InnerTextAsync();
 
                         var enlaces = await decreto.Locator("div .card .card-footer a").AllAsync();

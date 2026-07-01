@@ -7,15 +7,15 @@ using Rpa.Nucleo.Modelos;
 
 namespace Rpa.Infraestructura.SitiosWeb;
 
-public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
+public class ImpuestosExtractor : IExtractorWeb<ImpuestosModel>
 {
     // Nombre único que identifica a este extractor en el sistema
     public string NombreSitio => "Servicio de Impuestos Nacionales | Entidad facilitadora del cumplimiento de las obligaciones tributarias";
     public string UrlSitioWeb => "https://www.impuestos.gob.bo/index.php/rnd-2026/";
 
-    public async Task<ResultadosModel<ImpuestosModel>> ExtraerDatosAsync(long dateTime)
+    public async Task<ResultadosModel<ImpuestosModel>> ExtraerDatosAsync(long dateTime, string id)
     {
-        
+
         var resultado = new ResultadosModel<ImpuestosModel>
         {
             SitioWeb = NombreSitio,
@@ -89,14 +89,6 @@ public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
                 {
                     var celdaObjetivo = celdas[0];
                     string fecha = (await celdaObjetivo.Locator(".rnd-dates").InnerTextAsync()).Split("| Fecha de publicación: ")[1];
-
-                    // Condicional para verificar cuales son los documentos más recientes
-                    // Cambiar DateTime.Today.Ticks por la fecha a evaluar 
-                    if (resultado.convertirHora(fecha) <= dateTime)
-                    {
-                        continue;
-                    }
-
                     string textoTitulo = await celdaObjetivo.EvaluateAsync<string>(@"element => {
         const textos = Array.from(element.childNodes)
             .filter(node => node.nodeType === Node.TEXT_NODE)
@@ -106,6 +98,14 @@ public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
             if(textos.length > 1) return textos[0]+textos[1];
             if(textos.length <= 0) return ''; 
     }");
+                    // Condicional para verificar cuales son los documentos más recientes
+                    // Cambiar DateTime.Today.Ticks por la fecha a evaluar 
+                    if (resultado.convertirHora(fecha) < dateTime || textoTitulo == id)
+                    {
+                        continue;
+                    }
+
+
 
                     textoTitulo = textoTitulo.Replace("\"", "").Trim();
 

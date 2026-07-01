@@ -6,13 +6,13 @@ using System.Globalization;
 
 namespace Rpa.Infraestructura.SitiosWeb
 {
-    public class BCBCircularesExternas : IExtractorWeb<BCBCircularesExternasModel>
+    public class BCBResoluciones : IExtractorWeb<BCBResolucionesModel>
     {
-        public string NombreSitio => "BCB Circulares Externas";
-        public string UrlSitioWeb => "https://www.bcb.gob.bo/?q=circulares-externas";
-        public async Task<ResultadosModel<BCBCircularesExternasModel>> ExtraerDatosAsync(long dateTime, string id)
+        public string NombreSitio => "BCB Resoluciones de directorio";
+        public string UrlSitioWeb => "https://www.bcb.gob.bo/?q=resoluciones-de-directorio";
+        public async Task<ResultadosModel<BCBResolucionesModel>> ExtraerDatosAsync(long dateTime, string id)
         {
-            ResultadosModel<BCBCircularesExternasModel> resultadosModel = new()
+            ResultadosModel<BCBResolucionesModel> resultadosModel = new()
             {
                 SitioWeb = NombreSitio,
                 Status = "Procesado exitosamente"
@@ -68,9 +68,9 @@ namespace Rpa.Infraestructura.SitiosWeb
                     }
                 }
 
-                var selectorDesplegable = pagina.Locator("#edit-field-gestion-ce-value-value-year");
+                var selectorDesplegable = pagina.Locator("#edit-field-fecha-resolucion-value-value-year");
                 await selectorDesplegable.SelectOptionAsync(new[] { "2026" });
-                var boton = pagina.Locator("#edit-submit-circulares-externas");
+                var boton = pagina.Locator("#edit-submit-resoluciones-de-directorio");
                 await boton.ClickAsync();
                 var resolucionesContent = pagina.Locator(".view-content");
                 await resolucionesContent.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 10000 });
@@ -79,20 +79,19 @@ namespace Rpa.Infraestructura.SitiosWeb
                 {
                     foreach (var resolucion in resoluciones)
                     {
-                        BCBCircularesExternasModel bCBCircularesExternasModel = new();
-                        string[] fechaCompleta = (await resolucion.Locator("div .bcb_date span").InnerTextAsync()).Split("- ");
-                        string[] fechaLiteral = fechaCompleta[0].Split(", ");
-                        string titulo = await resolucion.Locator("div .bcb_title").InnerTextAsync();
-                        string fecha = fechaLiteral[1] + " " + fechaLiteral[2] + fechaCompleta[1];
-                        if (resultadosModel.convertirHora(fecha) < dateTime || titulo == id) continue;
+                        BCBResolucionesModel bCBResolucionesModel = new();
+                        var fechas = await resolucion.Locator("div .bcb_date span").AllAsync();
+                        string fechaResolucion = await fechas[0].InnerTextAsync();
+                        string fechaPublicacion = await fechas[1].InnerTextAsync();
+                        string reso = await resolucion.Locator("div .bcb_title a").InnerTextAsync();
+                        if (resultadosModel.convertirHora(fechaPublicacion) < dateTime || reso == id) { continue; }
+                        bCBResolucionesModel.Resolucion = reso;
+                        bCBResolucionesModel.FechaResolucion = fechaResolucion;
+                        bCBResolucionesModel.FechaPublicacion = fechaPublicacion;
+                        bCBResolucionesModel.Descripcion = await resolucion.Locator("div .bcb_content p").InnerTextAsync();
+                        bCBResolucionesModel.UrlPdf = await resolucion.Locator("div .bcb_adjunto strong a").GetAttributeAsync("href");
 
-                        bCBCircularesExternasModel.Fecha = fecha;
-
-                        bCBCircularesExternasModel.Titulo = titulo;
-                        bCBCircularesExternasModel.Contenido = await resolucion.Locator("div .bcb_content").InnerTextAsync();
-                        bCBCircularesExternasModel.UrlPdf = await resolucion.Locator("div .bcb_adjunto strong a").GetAttributeAsync("href");
-
-                        resultadosModel.ContenidoIdentificado.Add(bCBCircularesExternasModel);
+                        resultadosModel.ContenidoIdentificado.Add(bCBResolucionesModel);
                     }
                 }
             }
