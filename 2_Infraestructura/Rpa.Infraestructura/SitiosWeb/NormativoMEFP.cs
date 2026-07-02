@@ -15,7 +15,7 @@ public class NormativaMEFP : IExtractorWeb<MEFPModel>
     public string SeleccionarFechaString(MEFPModel modelo) => modelo.FechaPublicacion ?? string.Empty;
     public string SeleccionarIdentificadorUnico(MEFPModel modelo) => modelo.Titulo ?? string.Empty;
 
-    public async Task<ResultadosModel<MEFPModel>> ExtraerDatosAsync(long criterion, string id)
+    public async Task<ResultadosModel<MEFPModel>> ExtraerDatosAsync(long criterion, IEnumerable<string> id)
     {
         ResultadosModel<MEFPModel> resultadosModel = new()
         {
@@ -64,7 +64,7 @@ public class NormativaMEFP : IExtractorWeb<MEFPModel>
                         string fecha = (await columnas[8].InnerTextAsync()).Trim();
                         string titulo = (await columnas[1].InnerTextAsync()).Trim();
 
-                        if (resultadosModel.convertirHora(fecha) < criterion || titulo == id) continue;
+                        if (resultadosModel.convertirHora(fecha) < criterion || id.Contains(titulo)) continue;
 
                         MEFPModel mEFPModel = new()
                         {

@@ -78,20 +78,17 @@ public class Worker : BackgroundService
             long criterio = GestorEstadoRpa.ObtenerFechaCriterio(estadoActual, extractor);
 
             // 3. Obtener el identificador del último registro de control para evitar duplicados en el mismo milisegundo
-            string identificadorUltimo = "";
+            var idsExcluidos = new List<string>();
             if (estadoActual?.ContenidoIdentificado?.Any() == true)
             {
-                var registroMaximo = estadoActual.ContenidoIdentificado
-                    .FirstOrDefault(x => modeloVacio.convertirHora(extractor.SeleccionarFechaString(x)) == criterio);
-
-                if (registroMaximo != null)
-                {
-                    identificadorUltimo = extractor.SeleccionarIdentificadorUnico(registroMaximo);
-                }
+                idsExcluidos = estadoActual.ContenidoIdentificado
+                    .Where(x => modeloVacio.convertirHora(extractor.SeleccionarFechaString(x)) == criterio)
+                    .Select(x => extractor.SeleccionarIdentificadorUnico(x))
+                    .ToList();
             }
 
             // 4. Ejecutar el Web Scraper con los parámetros de rango dinámicos
-            var resultadosNuevos = await extractor.ExtraerDatosAsync(criterio, identificadorUltimo);
+            var resultadosNuevos = await extractor.ExtraerDatosAsync(criterio, idsExcluidos);
 
             // 5. Si se identificó contenido de valor, rotar y guardar en Blob Storage
             if (resultadosNuevos?.ContenidoIdentificado?.Count > 0)

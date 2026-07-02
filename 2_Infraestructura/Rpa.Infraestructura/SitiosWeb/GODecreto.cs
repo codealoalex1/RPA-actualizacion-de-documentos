@@ -15,7 +15,7 @@ public class GODecreto : IExtractorWeb<GODecretoModel>
     public string SeleccionarFechaString(GODecretoModel modelo) => modelo.FechaPublicacion ?? string.Empty;
     public string SeleccionarIdentificadorUnico(GODecretoModel modelo) => modelo.Titulo ?? string.Empty;
 
-    public async Task<ResultadosModel<GODecretoModel>> ExtraerDatosAsync(long criterion, string id)
+    public async Task<ResultadosModel<GODecretoModel>> ExtraerDatosAsync(long criterion, IEnumerable<string> id)
     {
         ResultadosModel<GODecretoModel> resultadosModel = new()
         {
@@ -75,7 +75,9 @@ public class GODecreto : IExtractorWeb<GODecretoModel>
                 string fecha = cuerpoTexto[1].Split("|")[0].Trim();
                 string titulo = (await cuerpo.Locator("h6 b").InnerTextAsync()).Trim();
 
-                if (resultadosModel.convertirHora(fecha) < criterion || titulo == id) continue;
+                Console.WriteLine(fecha, titulo);
+
+                if (resultadosModel.convertirHora(fecha) < criterion || id.Contains(titulo)) continue;
 
                 string edicion = cuerpoTexto[0].Split(": ")[1];
 

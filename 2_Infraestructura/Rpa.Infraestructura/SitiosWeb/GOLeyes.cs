@@ -15,7 +15,7 @@ public class GOLeyes : IExtractorWeb<GOLeyModel>
     public string SeleccionarFechaString(GOLeyModel modelo) => modelo.FechaPublicacion ?? string.Empty;
     public string SeleccionarIdentificadorUnico(GOLeyModel modelo) => modelo.Titulo ?? string.Empty;
 
-    public async Task<ResultadosModel<GOLeyModel>> ExtraerDatosAsync(long criterion, string id)
+    public async Task<ResultadosModel<GOLeyModel>> ExtraerDatosAsync(long criterion, IEnumerable<string> id)
     {
         ResultadosModel<GOLeyModel> resultadosModel = new()
         {
@@ -75,7 +75,7 @@ public class GOLeyes : IExtractorWeb<GOLeyModel>
                 string fecha = cuerpoTexto[1].Split("|")[0].Trim();
                 string titulo = (await cuerpo.Locator("h6 b").InnerTextAsync()).Trim();
 
-                if (resultadosModel.convertirHora(fecha) < criterion || titulo == id) continue;
+                if (resultadosModel.convertirHora(fecha) < criterion || id.Contains(titulo)) continue;
 
                 string edicion = cuerpoTexto[0].Split(": ")[1];
 

@@ -14,5 +14,5 @@ public interface IExtractorWeb<T>
     string SeleccionarIdentificadorUnico(T modelo);
 
     // Método principal que ejecutará Playwright internamente para extraer los datos
-    Task<ResultadosModel<T>> ExtraerDatosAsync(long criterio, string id);
+    Task<ResultadosModel<T>> ExtraerDatosAsync(long criterio, IEnumerable<string> idsExcluidos);
 }

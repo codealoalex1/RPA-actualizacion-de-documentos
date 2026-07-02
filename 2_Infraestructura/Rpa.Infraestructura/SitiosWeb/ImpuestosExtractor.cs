@@ -13,9 +13,9 @@ public class ImpuestosExtractor : IExtractorWeb<ImpuestosModel>
     public string UrlSitioWeb => "https://www.impuestos.gob.bo/index.php/rnd-2026/";
 
     public string SeleccionarFechaString(ImpuestosModel modelo) => modelo.Fecha ?? string.Empty;
-    public string SeleccionarIdentificadorUnico(ImpuestosModel modelo) => modelo.Id ?? string.Empty;
+    public string SeleccionarIdentificadorUnico(ImpuestosModel modelo) => modelo.Titulo ?? string.Empty;
 
-    public async Task<ResultadosModel<ImpuestosModel>> ExtraerDatosAsync(long criterion, string id)
+    public async Task<ResultadosModel<ImpuestosModel>> ExtraerDatosAsync(long criterion, IEnumerable<string> id)
     {
         var resultado = new ResultadosModel<ImpuestosModel>
         {
@@ -95,7 +95,7 @@ public class ImpuestosExtractor : IExtractorWeb<ImpuestosModel>
                     }
                 }
 
-                if (textoId == id) continue;
+                if (id.Contains(textoId)) continue;
 
                 var linkElement = celdaObjetivo.Locator("a");
                 if (await linkElement.CountAsync() > 0)
