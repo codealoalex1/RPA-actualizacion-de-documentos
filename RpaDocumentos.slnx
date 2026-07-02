@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/1_Nucleo/">
+    <Project Path="1_Nucleo/Rpa.Nucleo/Rpa.Nucleo.csproj" />
+  </Folder>
+  <Folder Name="/2_Infraestructura/">
+    <Project Path="2_Infraestructura/Rpa.Infraestructura/Rpa.Infraestructura.csproj" />
+  </Folder>
+  <Folder Name="/3_Aplicacion/">
+    <Project Path="3_Aplicacion/Rpa.ServicioWindows/Rpa.ServicioWindows.csproj" />
+  </Folder>
+</Solution>
