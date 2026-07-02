@@ -9,7 +9,6 @@ namespace Rpa.Infraestructura.SitiosWeb
     {
         public string NombreSitio => "GACETA OFICIAL del Estado Plurinacional de Bolivia | Listado de decretos ";
         public string UrlSitioWeb => "http://www.gacetaoficialdebolivia.gob.bo/normas/listadonor/11";
-
         public async Task<ResultadosModel<GODecretoModel>> ExtraerDatosAsync(long dateTime, string id)
         {
             ResultadosModel<GODecretoModel> resultadosModel = new()
@@ -19,54 +18,83 @@ namespace Rpa.Infraestructura.SitiosWeb
             };
 
             using var playwright = await Playwright.CreateAsync();
+
             await using var navegador = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
-                Headless = true
+                Headless = true,
+                Args = new[]
+                {
+                    "--allow-running-insecure-content"
+                }
             });
 
             var contexto = await navegador.NewContextAsync(new BrowserNewContextOptions
             {
                 UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 }
+                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+                Locale = "es-BO",
+                ServiceWorkers = ServiceWorkerPolicy.Block,
+                ExtraHTTPHeaders = new Dictionary<string, string>
+                {
+                    ["Accept-Language"] = "es-BO,es;q=0.9,en;q=0.8"
+                }
             });
 
+            await contexto.RouteAsync("**/*", async ruta =>
+                        {
+                            string tipo = ruta.Request.ResourceType;
+
+                            if (tipo == "image" || tipo == "font" || tipo == "media")
+                                await ruta.AbortAsync();
+                            else
+                                await ruta.ContinueAsync();
+                        });
+
             var pagina = await contexto.NewPageAsync();
+
+            pagina.SetDefaultTimeout(30000);
+            pagina.SetDefaultNavigationTimeout(60000);
 
             try
             {
                 int maxReintentos = 3;
-                int intento = 0;
-                bool exitoNavegacion = false;
+                Exception? ultimoError = null;
+                IResponse? respuesta = null;
 
-                while (intento < maxReintentos && !exitoNavegacion)
+                for (int intento = 1; intento <= maxReintentos; intento++)
                 {
                     try
                     {
-                        intento++;
-                        
-                        await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions
+                        Console.WriteLine($"Intentando abrir Gaceta Decretos por HTTP: {UrlSitioWeb}. Intento {intento}/{maxReintentos}");
+
+                        respuesta = await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions
                         {
-                            Timeout = 50000,
-                            WaitUntil = WaitUntilState.Load
+                            Timeout = 60000,
+                            WaitUntil = WaitUntilState.DOMContentLoaded
                         });
 
-                        exitoNavegacion = true; 
+                        if (respuesta == null || respuesta.Status < 400)
+                            break;
+
+                        throw new Exception($"La página respondió con estado HTTP {respuesta.Status}");
                     }
-                    catch (TimeoutException ex)
+                    catch (Exception ex)
                     {
-                        Console.WriteLine($"TIMEOUT: Intento {intento}/{maxReintentos} falló en {NombreSitio}. Detalle: {ex.Message}");
+                        ultimoError = ex;
 
-                        if (intento >= maxReintentos)
-                        {
-                            throw new Exception($"Saturación de red: Imposible conectar a {NombreSitio} tras {maxReintentos} intentos.");
-                        }
+                        Console.WriteLine($"Fallo intento {intento}/{maxReintentos} en Gaceta Decretos: {ex.Message}");
 
-                        // Tiempo de espera exponencial: Intento 1 = 3s, Intento 2 = 6s
-                        int tiempoEspera = intento * 3000;
-                        Console.WriteLine($"Esperando {tiempoEspera / 1000} segundos antes de reintentar...");
-                        await Task.Delay(tiempoEspera);
+                        if (intento == maxReintentos)
+                            throw new Exception($"No se pudo abrir {NombreSitio} por HTTP después de {maxReintentos} intentos.", ultimoError);
+
+                        await Task.Delay(intento * 3000);
                     }
                 }
+
+                await pagina.Locator("#titulos-bloque .row").First.WaitForAsync(new LocatorWaitForOptions
+                {
+                    Timeout = 20000
+                });
 
                 var decretos = await pagina.Locator("#titulos-bloque .row").AllAsync();
 

@@ -50,31 +50,7 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        /* _logger.LogInformation("Servicio RPA en Azure Container Apps Iniciado.");
-
-        // --- 3. PROCESAR GACETA DECRETOS ---
-        try
-        {
-            _logger.LogInformation("Ejecutando: [{sitio}]", _goDecreto.NombreSitio);
-            var goDecreto = await _goDecreto.ExtraerDatosAsync(1);
-            await _almacenamiento.GuardarEstadoAsync<GODecretoModel>(goDecreto, _goDecreto.NombreSitio, $"documento_{_goDecreto.NombreSitio}.json");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error en Gaceta Decretos.");
-        }
-
-        // --- 4. PROCESAR GACETA LEYES ---
-        try
-        {
-            _logger.LogInformation("Ejecutando: [{sitio}]", _goLeyes.NombreSitio);
-            var goLeyes = await _goLeyes.ExtraerDatosAsync(1);
-            await _almacenamiento.GuardarEstadoAsync<GOLeyModel>(goLeyes, _goLeyes.NombreSitio, $"documento_{_goLeyes.NombreSitio}.json");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error en Gaceta Leyes.");
-        } */
+        _logger.LogInformation("Servicio RPA en Azure Container Apps Iniciado.");
         // --- 1. PROCESAR IMPUESTOS ---
         try
         {
@@ -89,9 +65,9 @@ public class Worker : BackgroundService
                 modeloVacio.convertirHora
             );
 
-            Console.WriteLine(new DateTime(criterio));
+            string identificador = "";
 
-            string identificador = estadoActual.ContenidoIdentificado.Find(x=>modeloVacio.convertirHora(x.Fecha)==criterio).Titulo;
+            if (estadoActual != null) identificador = estadoActual.ContenidoIdentificado.Find(x => modeloVacio.convertirHora(x.Fecha) == criterio).Titulo;
             var resImpuestos = await _impuestosExtractor.ExtraerDatosAsync(criterio, identificador);
             if (resImpuestos.ContenidoIdentificado.Count > 0)
             {
@@ -116,7 +92,9 @@ public class Worker : BackgroundService
                 x => x.FechaPublicacion,
                 modeloVacio.convertirHora
             );
-            string identificador = estadoActual.ContenidoIdentificado.Find(x=>modeloVacio.convertirHora(x.FechaPublicacion)==criterio).Titulo;
+            string identificador = "";
+
+            if (estadoActual != null) identificador = estadoActual.ContenidoIdentificado.Find(x => modeloVacio.convertirHora(x.FechaPublicacion) == criterio).Titulo;
 
             var resMefp = await _mefpExtractor.ExtraerDatosAsync(criterio, identificador);
             if (resMefp.ContenidoIdentificado.Count > 0)
@@ -128,7 +106,54 @@ public class Worker : BackgroundService
         {
             _logger.LogError(ex, "Error en MEFP.");
         }
+        // --- 3. PROCESAR GACETA DECRETOS ---
+        try
+        {
+            _logger.LogInformation("Ejecutando: [{sitio}]", _goDecreto.NombreSitio);
+            var modeloVacio = new ResultadosModel<GODecretoModel>();
 
+            var estadoActual = await _almacenamiento.ObtenerUltimoEstadoAsync<GODecretoModel>(_goDecreto.NombreSitio, "nuevo.json");
+
+            long criterio = GestorEstadoRpa.ObtenerFechaCriterio<GODecretoModel>(
+                estadoActual,
+                x => x.FechaPublicacion,
+                modeloVacio.convertirHora
+            );
+            string identificador = "";
+
+            if (estadoActual != null) identificador = estadoActual.ContenidoIdentificado.Find(x => modeloVacio.convertirHora(x.FechaPublicacion) == criterio).Titulo;
+            var goDecreto = await _goDecreto.ExtraerDatosAsync(criterio, identificador);
+            await _almacenamiento.GuardarYRotarEstadoAsync<GODecretoModel>(goDecreto, _goDecreto.NombreSitio);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error en Gaceta Decretos.");
+        }
+
+        // --- 4. PROCESAR GACETA LEYES ---
+        try
+        {
+            _logger.LogInformation("Ejecutando: [{sitio}]", _goLeyes.NombreSitio);
+            var modeloVacio = new ResultadosModel<GOLeyModel>();
+
+            var estadoActual = await _almacenamiento.ObtenerUltimoEstadoAsync<GOLeyModel>(_goLeyes.NombreSitio, "nuevo.json");
+
+            long criterio = GestorEstadoRpa.ObtenerFechaCriterio<GOLeyModel>(
+                estadoActual,
+                x => x.FechaPublicacion,
+                modeloVacio.convertirHora
+            );
+            string identificador = "";
+
+            if (estadoActual != null) identificador = estadoActual.ContenidoIdentificado.Find(x => modeloVacio.convertirHora(x.FechaPublicacion) == criterio).Titulo;
+            
+            var goLeyes = await _goLeyes.ExtraerDatosAsync(criterio, identificador);
+            await _almacenamiento.GuardarYRotarEstadoAsync<GOLeyModel>(goLeyes, _goLeyes.NombreSitio);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error en Gaceta Leyes.");
+        }
         // --- 5. PROCESAR BCB CIRCULARES ---
         try
         {
@@ -145,7 +170,10 @@ public class Worker : BackgroundService
                 modeloVacio.convertirHora
             );
 
-            string identificador = estadoActual.ContenidoIdentificado.Find(x=>modeloVacio.convertirHora(x.Fecha)==criterio).Titulo;
+            string identificador = "";
+
+            if (estadoActual != null) identificador = estadoActual.ContenidoIdentificado.Find(x => modeloVacio.convertirHora(x.Fecha) == criterio).Titulo;
+
             var bcbCircExternas = await _bcbCE.ExtraerDatosAsync(criterio, identificador);
 
             if (bcbCircExternas.ContenidoIdentificado.Count > 0)
@@ -174,7 +202,9 @@ public class Worker : BackgroundService
                 modeloVacio.convertirHora
             );
 
-            string identificador = estadoActual.ContenidoIdentificado.Find(x=>modeloVacio.convertirHora(x.FechaPublicacion)==criterio).Resolucion;
+            string identificador = "";
+
+            if (estadoActual != null) identificador = estadoActual.ContenidoIdentificado.Find(x => modeloVacio.convertirHora(x.FechaPublicacion) == criterio).Resolucion;
 
             var bcbResoluciones = await _bcbR.ExtraerDatosAsync(criterio, identificador);
 
