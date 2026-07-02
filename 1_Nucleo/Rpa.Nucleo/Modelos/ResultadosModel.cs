@@ -10,6 +10,8 @@ public class ResultadosModel<T>
     public DateTime FechaVerificacion => fechaVerificacion();
     public List<T> ContenidoIdentificado { get; set; } = new();
     public string? Status { get; set; }
+    public string? ErrorMessage {get; set;}
+    public bool Procesado {get; set;} = false;
 
     public DateTime fechaVerificacion()
     {

@@ -15,7 +15,7 @@ public class BCBResoluciones : IExtractorWeb<BCBResolucionesModel>
     public string SeleccionarFechaString(BCBResolucionesModel modelo) => modelo.FechaPublicacion ?? string.Empty;
     public string SeleccionarIdentificadorUnico(BCBResolucionesModel modelo) => modelo.Resolucion ?? string.Empty;
 
-    public async Task<ResultadosModel<BCBResolucionesModel>> ExtraerDatosAsync(long criterion, string id)
+    public async Task<ResultadosModel<BCBResolucionesModel>> ExtraerDatosAsync(long criterion, IEnumerable<string> ids)
     {
         ResultadosModel<BCBResolucionesModel> resultadosModel = new()
         {
@@ -69,7 +69,7 @@ public class BCBResoluciones : IExtractorWeb<BCBResolucionesModel>
                 string fechaPublicacion = (await fechas[1].InnerTextAsync()).Trim();
                 string reso = (await resolucion.Locator("div .bcb_title a").InnerTextAsync()).Trim();
 
-                if (resultadosModel.convertirHora(fechaPublicacion) < criterion || reso == id) continue;
+                if (resultadosModel.convertirHora(fechaPublicacion) < criterion || ids.Contains(reso)) continue;
 
                 var bCBResolucionesModel = new BCBResolucionesModel
                 {
@@ -85,7 +85,9 @@ public class BCBResoluciones : IExtractorWeb<BCBResolucionesModel>
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error de parsing en BCB Resoluciones: {ex.Message}");
+            resultadosModel.ErrorMessage = ex.Message;
+            resultadosModel.Status = "Error";
+            throw;
         }
         finally
         {

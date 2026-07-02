@@ -15,7 +15,7 @@ public class BCBCircularesExternas : IExtractorWeb<BCBCircularesExternasModel>
     public string SeleccionarFechaString(BCBCircularesExternasModel modelo) => modelo.Fecha ?? string.Empty;
     public string SeleccionarIdentificadorUnico(BCBCircularesExternasModel modelo) => modelo.Titulo ?? string.Empty;
 
-    public async Task<ResultadosModel<BCBCircularesExternasModel>> ExtraerDatosAsync(long criterion, string id)
+    public async Task<ResultadosModel<BCBCircularesExternasModel>> ExtraerDatosAsync(long criterion, IEnumerable<string> ids)
     {
         ResultadosModel<BCBCircularesExternasModel> resultadosModel = new()
         {
@@ -69,7 +69,7 @@ public class BCBCircularesExternas : IExtractorWeb<BCBCircularesExternasModel>
                     string titulo = (await resolucion.Locator("div .bcb_title").InnerTextAsync()).Trim();
                     string fecha = (fechaLiteral[1] + " " + fechaLiteral[2] + fechaCompleta[1]).Trim();
 
-                    if (resultadosModel.convertirHora(fecha) < criterion || titulo == id) continue;
+                    if (resultadosModel.convertirHora(fecha) < criterion || ids.Contains(titulo)) continue;
 
                     var bCBCircularesExternasModel = new BCBCircularesExternasModel
                     {
@@ -85,7 +85,9 @@ public class BCBCircularesExternas : IExtractorWeb<BCBCircularesExternasModel>
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error de estructura en BCB Circulares: {ex.Message}");
+            resultadosModel.ErrorMessage = ex.Message;
+            resultadosModel.Status = "Error";
+            throw;
         }
         finally
         {

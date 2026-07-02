@@ -13,17 +13,15 @@ public class ImpuestosExtractor : IExtractorWeb<ImpuestosModel>
     public string UrlSitioWeb => "https://www.impuestos.gob.bo/index.php/rnd-2026/";
 
     public string SeleccionarFechaString(ImpuestosModel modelo) => modelo.Fecha ?? string.Empty;
-    public string SeleccionarIdentificadorUnico(ImpuestosModel modelo) => modelo.Id ?? string.Empty;
+    public string SeleccionarIdentificadorUnico(ImpuestosModel modelo) => modelo.Titulo ?? string.Empty;
 
-    public async Task<ResultadosModel<ImpuestosModel>> ExtraerDatosAsync(long criterion, string id)
+    public async Task<ResultadosModel<ImpuestosModel>> ExtraerDatosAsync(long criterion, IEnumerable<string> ids)
     {
-        var resultado = new ResultadosModel<ImpuestosModel>
+        var resultadosModel = new ResultadosModel<ImpuestosModel>
         {
             SitioWeb = NombreSitio,
             Status = "Procesado Exitosamente"
         };
-
-        var registrosExtraidos = new List<ImpuestosModel>();
 
         using var playwright = await Playwright.CreateAsync();
         await using var navegador = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
@@ -63,62 +61,81 @@ public class ImpuestosExtractor : IExtractorWeb<ImpuestosModel>
             await localizadorFilas.First.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 15000 });
 
             var filas = await localizadorFilas.AllAsync();
-
+            var registrosExtraidos = new List<ImpuestosModel>();
+            
             foreach (var fila in filas)
             {
                 var celdas = await fila.Locator("td").AllAsync();
-                if (celdas.Count < 2) continue;
 
-                string fecha = (await celdas[0].InnerTextAsync()).Trim();
-                if (string.IsNullOrEmpty(fecha) || fecha.Contains("FECHA")) continue;
-
-                if (resultado.convertirHora(fecha) < criterion) continue;
-
-                var celdaObjetivo = celdas[1];
-                string textoTitulo = string.Empty;
-                string textoId = string.Empty;
-                string urlPdf = string.Empty;
-
-                var pElements = await celdaObjetivo.Locator("p").AllAsync();
-                if (pElements.Count > 0)
+                if (celdas.Count >= 1)
                 {
-                    textoTitulo = (await pElements[0].InnerTextAsync()).Trim();
-                }
+                    var celdaObjetivo = celdas[0];
+                    string fecha = (await celdaObjetivo.Locator(".rnd-dates").InnerTextAsync()).Split("| Fecha de publicación: ")[1];
 
-                var strongElements = await celdaObjetivo.Locator("strong").AllAsync();
-                foreach (var item in strongElements)
-                {
-                    string inner = (await item.InnerTextAsync()).Trim();
-                    if (!string.IsNullOrEmpty(inner))
+                    // Condicional para verificar cuales son los documentos más recientes
+                    // Cambiar DateTime.Today.Ticks por la fecha a evaluar 
+                    if (resultadosModel.convertirHora(fecha) < criterion)
                     {
-                        textoId = inner;
+                        continue;
                     }
+
+                    string textoTitulo = await celdaObjetivo.EvaluateAsync<string>(@"element => {
+        const textos = Array.from(element.childNodes)
+            .filter(node => node.nodeType === Node.TEXT_NODE)
+            .map(node => node.textContent.trim())
+            .filter(text => text.length > 0);
+            if(textos.length == 1) return textos[0];
+            if(textos.length > 1) return textos[0]+textos[1];
+            if(textos.length <= 0) return ''; 
+    }");
+
+                    textoTitulo = textoTitulo.Replace("\"", "").Trim();
+                    if(ids.Contains(textoTitulo)) continue;
+
+                    string textoId = string.Empty;
+                    string urlPdf = string.Empty;
+
+                    var strongElement = await celdaObjetivo.Locator("strong").AllAsync();
+                    if (strongElement.Count == 0)
+                    {
+                        textoId = await strongElement[0].InnerTextAsync() ?? string.Empty;
+                    }
+                    if (strongElement.Count > 0)
+                    {
+                        foreach (var item in strongElement)
+                        {
+                            if (await item.InnerTextAsync() == "")
+                            {
+                                continue;
+                            }
+                            textoId = await item.InnerTextAsync() ?? string.Empty;
+                        }
+                    }
+
+                    var linkElement = celdaObjetivo.Locator("a");
+                    if (await linkElement.CountAsync() > 0)
+                    {
+                        urlPdf = (await linkElement.First.GetAttributeAsync("href")) ?? string.Empty;
+                    }
+
+                    var nuevoRegistro = new ImpuestosModel()
+                    {
+                        Titulo = textoTitulo,
+                        Id = textoId.Trim(),
+                        UrlPdf = urlPdf.Trim(),
+                        Fecha = fecha
+                    };
+
+                    registrosExtraidos.Add(nuevoRegistro);
                 }
-
-                if (textoId == id) continue;
-
-                var linkElement = celdaObjetivo.Locator("a");
-                if (await linkElement.CountAsync() > 0)
-                {
-                    urlPdf = (await linkElement.First.GetAttributeAsync("href")) ?? string.Empty;
-                }
-
-                var nuevoRegistro = new ImpuestosModel()
-                {
-                    Titulo = textoTitulo,
-                    Id = textoId.Trim(),
-                    UrlPdf = urlPdf.Trim(),
-                    Fecha = fecha
-                };
-
-                registrosExtraidos.Add(nuevoRegistro);
             }
 
-            resultado.ContenidoIdentificado = registrosExtraidos;
+            resultadosModel.ContenidoIdentificado = registrosExtraidos;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            resultado.Status = "Error en la Extracción del Sitio";
+            resultadosModel.ErrorMessage = ex.Message;
+            resultadosModel.Status = "Error";
             throw;
         }
         finally
@@ -126,6 +143,6 @@ public class ImpuestosExtractor : IExtractorWeb<ImpuestosModel>
             await contexto.CloseAsync();
         }
 
-        return resultado;
+        return resultadosModel;
     }
 }
