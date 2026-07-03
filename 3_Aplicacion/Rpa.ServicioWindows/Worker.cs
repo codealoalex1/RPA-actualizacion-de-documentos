@@ -52,7 +52,7 @@ public class Worker : BackgroundService
     {
         _logger.LogInformation("Servicio RPA en Azure Container Apps Iniciado.");
         // --- 1. PROCESAR IMPUESTOS ---
-        try
+        /* try
         {
             _logger.LogInformation("Ejecutando: [{sitio}]", _impuestosExtractor.NombreSitio);
             var modeloVacio = new ResultadosModel<ImpuestosModel>();
@@ -105,9 +105,9 @@ public class Worker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error en MEFP.");
-        }
+        } */
         // --- 3. PROCESAR GACETA DECRETOS ---
-        try
+        /* try
         {
             _logger.LogInformation("Ejecutando: [{sitio}]", _goDecreto.NombreSitio);
             var modeloVacio = new ResultadosModel<GODecretoModel>();
@@ -129,7 +129,7 @@ public class Worker : BackgroundService
         {
             _logger.LogError(ex, "Error en Gaceta Decretos.");
         }
-
+ */
         // --- 4. PROCESAR GACETA LEYES ---
         try
         {
@@ -154,7 +154,7 @@ public class Worker : BackgroundService
         {
             _logger.LogError(ex, "Error en Gaceta Leyes.");
         }
-        // --- 5. PROCESAR BCB CIRCULARES ---
+        /* // --- 5. PROCESAR BCB CIRCULARES ---
         try
         {
             _logger.LogInformation("Ejecutando: [{sitio}]", _bcbCE.NombreSitio);
@@ -216,7 +216,7 @@ public class Worker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error grave en BCB Circulares.");
-        }
+        } */
 
         _logger.LogInformation("=== Fin del ciclo único de extracción. Terminando contenedor de forma limpia. ===");
         Environment.Exit(0);

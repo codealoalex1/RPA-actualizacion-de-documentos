@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Microsoft.Playwright;
 using Rpa.Nucleo.Interfaces;
 using Rpa.Nucleo.Modelos;
@@ -9,6 +12,7 @@ namespace Rpa.Infraestructura.SitiosWeb
     {
         public string NombreSitio => "GACETA OFICIAL del Estado Plurinacional de Bolivia | Listado de leyes ";
         public string UrlSitioWeb => "http://www.gacetaoficialdebolivia.gob.bo/normas/listadonor/10";
+        
         public async Task<ResultadosModel<GOLeyModel>> ExtraerDatosAsync(long dateTime, string id)
         {
             ResultadosModel<GOLeyModel> resultadosModel = new()
@@ -18,12 +22,21 @@ namespace Rpa.Infraestructura.SitiosWeb
             };
 
             using var playwright = await Playwright.CreateAsync();
+            
+            // MODIFICACIÓN: Añadimos las credenciales y el túnel del Proxy aquí
             await using var navegador = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
                 Headless = true,
                 Args = new[]
-                            {
+                {
                     "--allow-running-insecure-content"
+                },
+                // CONFIGURACIÓN DEL PROXY (Reemplaza con los datos de tu proveedor)
+                Proxy = new Proxy
+                {
+                    Server = "http://proxy-server.scraperapi.com:8001", 
+                    Username = "scraperapi", // Opcional (deja en blanco o borra la línea si es IP pública autorizada)
+                    Password = "7be7658909a19fe4f8df9236fd345bff" // Opcional
                 }
             });
 
@@ -40,14 +53,14 @@ namespace Rpa.Infraestructura.SitiosWeb
             });
 
             await contexto.RouteAsync("**/*", async ruta =>
-                        {
-                            string tipo = ruta.Request.ResourceType;
+            {
+                string tipo = ruta.Request.ResourceType;
 
-                            if (tipo == "image" || tipo == "font" || tipo == "media")
-                                await ruta.AbortAsync();
-                            else
-                                await ruta.ContinueAsync();
-                        });
+                if (tipo == "image" || tipo == "font" || tipo == "media")
+                    await ruta.AbortAsync();
+                else
+                    await ruta.ContinueAsync();
+            });
 
             var pagina = await contexto.NewPageAsync();
 
@@ -64,7 +77,7 @@ namespace Rpa.Infraestructura.SitiosWeb
                 {
                     try
                     {
-                        Console.WriteLine($"Intentando abrir Gaceta Leyes por HTTP: {UrlSitioWeb}. Intento {intento}/{maxReintentos}");
+                        Console.WriteLine($"Intentando abrir Gaceta Leyes por HTTP con Proxy (IP Rotativa): {UrlSitioWeb}. Intento {intento}/{maxReintentos}");
 
                         respuesta = await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions
                         {
