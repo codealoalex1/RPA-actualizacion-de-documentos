@@ -7,13 +7,13 @@ namespace Rpa.Nucleo.Modelos;
 public class ResultadosModel<T>
 {
     public string? SitioWeb { get; set; }
-    public DateTime FechaVerificacion => fechaVerificacion();
+    public DateTime FechaVerificacion { get; set; } = ObtenerHoraActual();
     public List<T> ContenidoIdentificado { get; set; } = new();
     public string? Status { get; set; }
-    public string? ErrorMessage {get; set;}
-    public bool Procesado {get; set;} = false;
+    public string? ErrorMessage { get; set; }
+    public bool Procesado { get; set; } = false;
 
-    public DateTime fechaVerificacion()
+    private static DateTime ObtenerHoraActual()
     {
         DateTime horaUtc = DateTime.UtcNow;
         TimeZoneInfo zonaBolivia = TimeZoneInfo.FindSystemTimeZoneById("SA Western Standard Time");

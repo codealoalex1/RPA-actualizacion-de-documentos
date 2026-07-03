@@ -50,13 +50,13 @@ public class Worker : BackgroundService
         _logger.LogInformation("=== Iniciando ciclo único de extracción unificada ===");
 
         // Ejecución secuencial sumamente limpia utilizando polimorfismo genérico
-        await ProcesarExtractorAsync(_goLeyes);
-        
-        /*await ProcesarExtractorAsync(_impuestosExtractor);
-        await ProcesarExtractorAsync(_mefpExtractor);
-        await ProcesarExtractorAsync(_goDecreto);
+
+        /* await ProcesarExtractorAsync(_impuestosExtractor);
+        await ProcesarExtractorAsync(_mefpExtractor); */
+        /* await ProcesarExtractorAsync(_goLeyes);
+        await ProcesarExtractorAsync(_goDecreto); */
         await ProcesarExtractorAsync(_bcbCE);
-        await ProcesarExtractorAsync(_bcbR); */
+        /* await ProcesarExtractorAsync(_bcbR); */
 
         _logger.LogInformation("=== Fin del ciclo único de extracción. Terminando contenedor de forma limpia. ===");
         Environment.Exit(0);
@@ -73,10 +73,18 @@ public class Worker : BackgroundService
             var modeloVacio = new ResultadosModel<T>();
 
             // 1. Recuperar el último estado guardado en Azure
-            var estadoActual = await _almacenamiento.ObtenerUltimoEstadoAsync<T>(extractor.NombreSitio, "nuevo.json");
+            var estadoActual = await _almacenamiento.ObtenerUltimoEstadoAsync<T>(extractor.NombreSitio, "");
 
             // 2. Extraer la marca de tiempo de control dinámicamente
             long criterio = GestorEstadoRpa.ObtenerFechaCriterio(estadoActual, extractor);
+
+            if (estadoActual != null)
+            {
+                if (!estadoActual.Procesado)
+                {
+                    criterio = new DateTime(criterio).Ticks - 864000000000;
+                }
+            }
 
             // 3. Obtener el identificador del último registro de control para evitar duplicados en el mismo milisegundo
             var idsExcluidos = new List<string>();
@@ -84,33 +92,39 @@ public class Worker : BackgroundService
             {
                 var registroMaximo = estadoActual.ContenidoIdentificado
                     .FirstOrDefault(x => modeloVacio.convertirHora(extractor.SeleccionarFechaString(x)) == criterio);
-                    if (estadoActual?.ContenidoIdentificado?.Any() == true){
-                        idsExcluidos = estadoActual.ContenidoIdentificado
-                        .Where(x => modeloVacio.convertirHora(extractor.SeleccionarFechaString(x)) == criterio)
-                        .Select(x => extractor.SeleccionarIdentificadorUnico(x))
-                        .ToList();
-                    }
-                /* if(extractor.NombreSitio == "GACETA OFICIAL del Estado Plurinacional de Bolivia | Listado de decretos" || extractor.NombreSitio== "GACETA OFICIAL del Estado Plurinacional de Bolivia | Listado de leyes")
+                if (estadoActual?.ContenidoIdentificado?.Any() == true)
                 {
-                    identificadorEdicion = extractor.
-                } */
+                    idsExcluidos = estadoActual.ContenidoIdentificado
+                    .Where(x => modeloVacio.convertirHora(extractor.SeleccionarFechaString(x)) == criterio)
+                    .Select(x => extractor.SeleccionarIdentificadorUnico(x))
+                    .ToList();
+                }
             }
-            
 
             // 4. Ejecutar el Web Scraper con los parámetros de rango dinámicos
+
             var resultadosNuevos = await extractor.ExtraerDatosAsync(criterio, idsExcluidos);
 
             // 5. Si se identificó contenido de valor, rotar y guardar en Blob Storage
-            if (resultadosNuevos?.ContenidoIdentificado?.Count > 0)
+            if (estadoActual != null)
             {
-                _logger.LogInformation("[ORQUESTADOR] ¡Novedades detectadas ({Count})! Guardando y rotando estado para: {Sitio}",
-                    resultadosNuevos.ContenidoIdentificado.Count, extractor.NombreSitio);
-
-                await _almacenamiento.GuardarEstadoAsync(resultadosNuevos, extractor.NombreSitio, $"doc_{DateTime.UtcNow.Ticks}.json");
+                if (resultadosNuevos?.ContenidoIdentificado?.Count > 0)
+                {
+                    _logger.LogInformation("[ORQUESTADOR] ¡Novedades detectadas ({Count})! Guardando y rotando estado para: {Sitio}",
+                        resultadosNuevos.ContenidoIdentificado.Count, extractor.NombreSitio);
+                    await _almacenamiento.EliminarEstadoPorFechaAsync<T>(extractor.NombreSitio, estadoActual.FechaVerificacion);
+                    await _almacenamiento.GuardarEstadoAsync(resultadosNuevos, extractor.NombreSitio, $"doc_{DateTime.UtcNow.Ticks}.json");
+                }
+                else
+                {
+                    _logger.LogInformation("No se encontraron nuevos registros");
+                }
             }
             else
             {
-                _logger.LogInformation("[ORQUESTADOR] No se encontraron nuevos registros para: {Sitio}", extractor.NombreSitio);
+                _logger.LogInformation("[ORQUESTADOR] ¡Novedades detectadas ({Count})! Guardando y rotando estado para: {Sitio}",
+                resultadosNuevos.ContenidoIdentificado.Count, extractor.NombreSitio);
+                await _almacenamiento.GuardarEstadoAsync(resultadosNuevos, extractor.NombreSitio, $"doc_{DateTime.UtcNow.Ticks}.json");
             }
         }
         catch (Exception ex)

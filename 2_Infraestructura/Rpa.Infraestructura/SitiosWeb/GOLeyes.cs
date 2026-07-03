@@ -103,7 +103,6 @@ public class GOLeyes : IExtractorWeb<GOLeyModel>
             });
 
             var leyes = await pagina.Locator("#titulos-bloque .row").AllAsync();
-            Console.WriteLine(leyes.Count);
 
             if (leyes.Count > 0)
             {
@@ -118,7 +117,7 @@ public class GOLeyes : IExtractorWeb<GOLeyModel>
                     string fecha = cuerpoTexto[1].Split("|")[0];
                     string titulo = await cuerpo.Locator("h6 b").InnerTextAsync();
 
-                    if (resultadosModel.convertirHora(fecha) < criterion|| ids.Contains(titulo)) continue;
+                    if (resultadosModel.convertirHora(fecha) < criterion || ids.Contains(titulo)) continue;
 
                     string edicion = cuerpoTexto[0].Split(": ")[1];
 

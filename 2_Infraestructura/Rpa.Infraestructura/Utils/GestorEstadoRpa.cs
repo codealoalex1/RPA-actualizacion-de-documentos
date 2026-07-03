@@ -19,10 +19,18 @@ public static class GestorEstadoRpa
 
         try
         {
-            // El gestor ahora le pregunta al extractor qué campo auditar de forma limpia y polimórfica
-            return estadoAzure.ContenidoIdentificado
+            if (estadoAzure.Procesado)
+            {
+                return estadoAzure.ContenidoIdentificado
                 .Select(x => estadoAzure.convertirHora(extractor.SeleccionarFechaString(x)))
                 .Max();
+            }
+            else
+            {
+                return estadoAzure.ContenidoIdentificado
+                .Select(x => estadoAzure.convertirHora(extractor.SeleccionarFechaString(x)))
+                .Min();
+            }
         }
         catch (Exception ex)
         {

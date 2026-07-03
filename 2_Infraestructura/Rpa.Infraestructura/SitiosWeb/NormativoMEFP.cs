@@ -61,7 +61,7 @@ public class NormativaMEFP : IExtractorWeb<MEFPModel>
                     var columnas = await fila.Locator("td").AllAsync();
                     if (columnas.Count >= 9)
                     {
-                        string fecha = (await columnas[8].InnerTextAsync()).Trim();
+                        string fecha = (await columnas[9].InnerTextAsync()).Trim();
                         string titulo = (await columnas[1].InnerTextAsync()).Trim();
 
                         if (resultadosModel.convertirHora(fecha) < criterion || ids.Contains(titulo)) continue;
