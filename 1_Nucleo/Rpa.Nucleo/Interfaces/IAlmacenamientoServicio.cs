@@ -10,4 +10,6 @@ public interface IAlmacenamientoServicio
 
     // Sube el nuevo JSON generado al contenedor de Azure
     Task GuardarEstadoAsync<T>(ResultadosModel<T> datos, string nombreSitio, string nombreArchivo);
+    Task GuardarYRotarEstadoAsync<T>(ResultadosModel<T> nuevosResultados, string nombreSitio);
+    Task<bool> EliminarEstadoPorFechaAsync<T>(string nombreSitio, DateTime fechaObjetivo);
 }

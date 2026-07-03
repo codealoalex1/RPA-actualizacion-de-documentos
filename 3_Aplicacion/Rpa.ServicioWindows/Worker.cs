@@ -1,12 +1,12 @@
 using System;
-using System.Net.Http;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Rpa.Infraestructura.Azure;
 using Rpa.Infraestructura.SitiosWeb;
+using Rpa.Infraestructura.Utilidades;
 using Rpa.Nucleo.Interfaces;
 using Rpa.Nucleo.Modelos;
 
@@ -15,13 +15,15 @@ namespace Rpa.ServicioWindows;
 public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
+    private readonly IAlmacenamientoServicio _almacenamiento;
+
+    // Tus inyecciones actuales de extractores se mantienen en esta fase...
     private readonly ImpuestosExtractor _impuestosExtractor;
     private readonly NormativaMEFP _mefpExtractor;
     private readonly GODecreto _goDecreto;
     private readonly GOLeyes _goLeyes;
     private readonly BCBCircularesExternas _bcbCE;
-    private readonly JsonSerializerOptions _opcionesJson;
-    private readonly IAlmacenamientoServicio _almacenamiento;
+    private readonly BCBResoluciones _bcbR;
 
     public Worker(
         ILogger<Worker> logger,
@@ -30,8 +32,8 @@ public class Worker : BackgroundService
         GODecreto gODecreto,
         GOLeyes gOLeyes,
         BCBCircularesExternas bCBCircularesExternas,
-        IAlmacenamientoServicio almacenamientoBlob
-        )
+        BCBResoluciones bCBResoluciones,
+        IAlmacenamientoServicio almacenamientoBlob)
     {
         _logger = logger;
         _impuestosExtractor = impuestosExtractor;
@@ -39,94 +41,89 @@ public class Worker : BackgroundService
         _goDecreto = gODecreto;
         _goLeyes = gOLeyes;
         _bcbCE = bCBCircularesExternas;
+        _bcbR = bCBResoluciones;
         _almacenamiento = almacenamientoBlob;
-        _opcionesJson = new JsonSerializerOptions { WriteIndented = true };
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Servicio RPA en Azure Container Apps Iniciado.");
+        _logger.LogInformation("=== Iniciando ciclo único de extracción unificada ===");
 
-        // --- AUDITORÍA DE RED INICIAL ---
-        try
-        {
-            using var client = new HttpClient();
-            client.Timeout = TimeSpan.FromSeconds(10);
-            var response = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, "http://www.gacetaoficialdebolivia.gob.bo"), stoppingToken);
-            _logger.LogInformation("[AUDITORÍA RED] Conexión exitosa a la Gaceta. Código Estado: {code}", response.StatusCode);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError("[AUDITORÍA RED] Fallo crítico de salida a internet o DNS: {message}", ex.Message);
-            if (ex.InnerException != null)
-            {
-                _logger.LogError("[AUDITORÍA RED] Detalle interno: {inner}", ex.InnerException.Message);
-            }
-        }
+        // Ejecución secuencial sumamente limpia utilizando polimorfismo genérico
 
-        _logger.LogInformation("=== Iniciando ciclo único de extracción RPA ===");
-
-        // --- 1. PROCESAR IMPUESTOS ---
-        try
-        {
-            _logger.LogInformation("Ejecutando: [{sitio}]", _impuestosExtractor.NombreSitio);
-            var resImpuestos = await _impuestosExtractor.ExtraerDatosAsync();
-            await _almacenamiento.GuardarEstadoAsync<ImpuestosModel>(resImpuestos, _impuestosExtractor.NombreSitio, $"documento_{_impuestosExtractor.NombreSitio}.json");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error en Impuestos.");
-        }
-
-        // --- 2. PROCESAR MEFP ---
-        try
-        {
-            _logger.LogInformation("Ejecutando: [{sitio}]", _mefpExtractor.NombreSitio);
-            var resMefp = await _mefpExtractor.ExtraerDatosAsync();
-            await _almacenamiento.GuardarEstadoAsync<MEFPModel>(resMefp, _mefpExtractor.NombreSitio, $"documento_{_mefpExtractor.NombreSitio}.json");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error en MEFP.");
-        }
-
-        // --- 3. PROCESAR GACETA DECRETOS ---
-        try
-        {
-            _logger.LogInformation("Ejecutando: [{sitio}]", _goDecreto.NombreSitio);
-            var goDecreto = await _goDecreto.ExtraerDatosAsync();
-            await _almacenamiento.GuardarEstadoAsync<GODecretoModel>(goDecreto, _goDecreto.NombreSitio, $"documento_{_goDecreto.NombreSitio}.json");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error en Gaceta Decretos.");
-        }
-
-        // --- 4. PROCESAR GACETA LEYES ---
-        try
-        {
-            _logger.LogInformation("Ejecutando: [{sitio}]", _goLeyes.NombreSitio);
-            var goLeyes = await _goLeyes.ExtraerDatosAsync();
-            await _almacenamiento.GuardarEstadoAsync<GOLeyModel>(goLeyes, _goLeyes.NombreSitio, $"documento_{_goLeyes.NombreSitio}.json");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error en Gaceta Leyes.");
-        }
-
-        // --- 5. PROCESAR BCB CIRCULARES ---
-        try
-        {
-            _logger.LogInformation("Ejecutando: [{sitio}]", _bcbCE.NombreSitio);
-            var bcbCircExternas = await _bcbCE.ExtraerDatosAsync();
-            await _almacenamiento.GuardarEstadoAsync<BCBCircularesExternasModel>(bcbCircExternas, _bcbCE.NombreSitio, $"documento_{_bcbCE.NombreSitio}.json");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error grave en BCB Circulares.");
-        }
+        await ProcesarExtractorAsync(_impuestosExtractor);
+        await ProcesarExtractorAsync(_mefpExtractor);
+        await ProcesarExtractorAsync(_bcbCE);
+        await ProcesarExtractorAsync(_bcbR);
+        await ProcesarExtractorAsync(_goLeyes);
+        await ProcesarExtractorAsync(_goDecreto);
 
         _logger.LogInformation("=== Fin del ciclo único de extracción. Terminando contenedor de forma limpia. ===");
         Environment.Exit(0);
+    }
+
+    /// <summary>
+    /// MOTOR DE ORQUESTACIÓN GENÉRICO: Ejecuta el flujo completo de persistencia y raspado para cualquier extractor.
+    /// </summary>
+    private async Task ProcesarExtractorAsync<T>(IExtractorWeb<T> extractor)
+    {
+        try
+        {
+            _logger.LogInformation("Iniciando proceso para: [{Sitio}]", extractor.NombreSitio);
+            var modeloVacio = new ResultadosModel<T>();
+
+            var estadoActual = await _almacenamiento.ObtenerUltimoEstadoAsync<T>(extractor.NombreSitio, "");
+
+            long criterio = GestorEstadoRpa.ObtenerFechaCriterio(estadoActual, extractor);
+
+            if (estadoActual != null)
+            {
+                if (!estadoActual.Procesado)
+                {
+                    criterio = new DateTime(criterio).Ticks - 864000000000;
+                }
+            }
+
+            var idsExcluidos = new List<string>();
+            if (estadoActual?.ContenidoIdentificado?.Any() == true)
+            {
+                var registroMaximo = estadoActual.ContenidoIdentificado
+                    .FirstOrDefault(x => modeloVacio.convertirHora(extractor.SeleccionarFechaString(x)) == criterio);
+                if (estadoActual?.ContenidoIdentificado?.Any() == true)
+                {
+                    idsExcluidos = estadoActual.ContenidoIdentificado
+                    .Where(x => modeloVacio.convertirHora(extractor.SeleccionarFechaString(x)) == criterio)
+                    .Select(x => extractor.SeleccionarIdentificadorUnico(x))
+                    .ToList();
+                }
+            }
+
+            var resultadosNuevos = await extractor.ExtraerDatosAsync(criterio, idsExcluidos);
+
+            if (estadoActual != null)
+            {
+                if (resultadosNuevos?.ContenidoIdentificado?.Count > 0)
+                {
+                    _logger.LogInformation("¡Novedades detectadas ({Count})! almacenando",
+                        resultadosNuevos.ContenidoIdentificado.Count, extractor.NombreSitio);
+                    await _almacenamiento.EliminarEstadoPorFechaAsync<T>(extractor.NombreSitio, estadoActual.FechaVerificacion);
+                    await _almacenamiento.GuardarEstadoAsync(resultadosNuevos, extractor.NombreSitio, $"doc_{DateTime.UtcNow.Ticks}.json");
+                }
+                else
+                {
+                    _logger.LogInformation("No se encontraron nuevos registros");
+                }
+            }
+            else
+            {
+                _logger.LogInformation("¡Novedades detectadas ({Count})! almacenando",
+                resultadosNuevos.ContenidoIdentificado.Count, extractor.NombreSitio);
+                await _almacenamiento.GuardarEstadoAsync(resultadosNuevos, extractor.NombreSitio, $"doc_{DateTime.UtcNow.Ticks}.json");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Falló la ejecución del extractor: {Sitio}", extractor.NombreSitio);
+        }
     }
 }

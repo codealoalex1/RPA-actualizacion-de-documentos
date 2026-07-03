@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Microsoft.Playwright;
 using Rpa.Nucleo.Interfaces;
 using Rpa.Nucleo.Modelos;
@@ -8,9 +11,12 @@ namespace Rpa.Infraestructura.SitiosWeb
     public class GOLeyes : IExtractorWeb<GOLeyModel>
     {
         public string NombreSitio => "GACETA OFICIAL del Estado Plurinacional de Bolivia | Listado de leyes ";
-        public string UrlSitioWeb => "www.gacetaoficialdebolivia.gob.bo/normas/listadonor/10";
+        public string UrlSitioWeb => "http://www.gacetaoficialdebolivia.gob.bo/normas/listadonor/10";
+        public string SeleccionarFechaString(GOLeyModel modelo) => modelo.FechaPublicacion ?? string.Empty;
+        public string SeleccionarIdentificadorUnico(GOLeyModel modelo) => modelo.Titulo ?? string.Empty;
+        public string SeleccionarEdicion(GOLeyModel modelo) => modelo.Edicion ?? string.Empty;
 
-        public async Task<ResultadosModel<GOLeyModel>> ExtraerDatosAsync()
+        public async Task<ResultadosModel<GOLeyModel>> ExtraerDatosAsync(long dateTime, IEnumerable<string> ids)
         {
             ResultadosModel<GOLeyModel> resultadosModel = new()
             {
@@ -19,55 +25,89 @@ namespace Rpa.Infraestructura.SitiosWeb
             };
 
             using var playwright = await Playwright.CreateAsync();
+
+            // MODIFICACIÓN: Añadimos las credenciales y el túnel del Proxy aquí
             await using var navegador = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
-                Headless = true
+                Headless = true,
+                Args = new[]
+                {
+                    "--allow-running-insecure-content"
+                },
+                // CONFIGURACIÓN DEL PROXY (Reemplaza con los datos de tu proveedor)
+                Proxy = new Proxy
+                {
+                    Server = "http://proxy-server.scraperapi.com:8001",
+                    Username = "scraperapi", // Opcional (deja en blanco o borra la línea si es IP pública autorizada)
+                    Password = "7be7658909a19fe4f8df9236fd345bff" // Opcional
+                }
             });
 
             var contexto = await navegador.NewContextAsync(new BrowserNewContextOptions
             {
                 UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 }
+                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+                Locale = "es-BO",
+                ServiceWorkers = ServiceWorkerPolicy.Block,
+                ExtraHTTPHeaders = new Dictionary<string, string>
+                {
+                    ["Accept-Language"] = "es-BO,es;q=0.9,en;q=0.8"
+                }
+            });
+
+            await contexto.RouteAsync("**/*", async ruta =>
+            {
+                string tipo = ruta.Request.ResourceType;
+
+                if (tipo == "image" || tipo == "font" || tipo == "media")
+                    await ruta.AbortAsync();
+                else
+                    await ruta.ContinueAsync();
             });
 
             var pagina = await contexto.NewPageAsync();
 
+            pagina.SetDefaultTimeout(30000);
+            pagina.SetDefaultNavigationTimeout(60000);
+
             try
             {
-
                 int maxReintentos = 3;
-                int intento = 0;
-                bool exitoNavegacion = false;
+                Exception? ultimoError = null;
+                IResponse? respuesta = null;
 
-                while (intento < maxReintentos && !exitoNavegacion)
+                for (int intento = 1; intento <= maxReintentos; intento++)
                 {
                     try
                     {
-                        intento++;
-
-                        await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions
+                        respuesta = await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions
                         {
-                            Timeout = 50000,
-                            WaitUntil = WaitUntilState.Load
+                            Timeout = 60000,
+                            WaitUntil = WaitUntilState.DOMContentLoaded
                         });
 
-                        exitoNavegacion = true;
+                        if (respuesta == null || respuesta.Status < 400)
+                            break;
+
+                        throw new Exception($"La página respondió con estado HTTP {respuesta.Status}");
                     }
-                    catch (TimeoutException ex)
+                    catch (Exception ex)
                     {
-                        Console.WriteLine($"TIMEOUT: Intento {intento}/{maxReintentos} falló en {NombreSitio}. Detalle: {ex.Message}");
+                        ultimoError = ex;
 
-                        if (intento >= maxReintentos)
-                        {
-                            throw new Exception($"Saturación de red: Imposible conectar a {NombreSitio} tras {maxReintentos} intentos.");
-                        }
+                        Console.WriteLine($"Fallo intento {intento}/{maxReintentos} en Gaceta Leyes: {ex.Message}");
 
-                        // Tiempo de espera exponencial: Intento 1 = 3s, Intento 2 = 6s
-                        int tiempoEspera = intento * 3000;
-                        Console.WriteLine($"Esperando {tiempoEspera / 1000} segundos antes de reintentar...");
-                        await Task.Delay(tiempoEspera);
+                        if (intento == maxReintentos)
+                            throw new Exception($"No se pudo abrir {NombreSitio} por HTTP después de {maxReintentos} intentos.", ultimoError);
+
+                        await Task.Delay(intento * 3000);
                     }
                 }
+
+                await pagina.Locator("#titulos-bloque .row").First.WaitForAsync(new LocatorWaitForOptions
+                {
+                    Timeout = 20000
+                });
 
                 var leyes = await pagina.Locator("#titulos-bloque .row").AllAsync();
 
@@ -82,15 +122,16 @@ namespace Rpa.Infraestructura.SitiosWeb
 
                         var cuerpoTexto = (await cuerpo.Locator(".card-text.texto-default").InnerTextAsync()).Split(" | Fecha de Publicación: ");
                         string fecha = cuerpoTexto[1].Split("|")[0];
+                        string titulo = await cuerpo.Locator("h6 b").InnerTextAsync();
 
-                        if (resultadosModel.convertirHora(fecha) < resultadosModel.convertirHora("2026-05-29")) continue;
+                        if (resultadosModel.convertirHora(fecha) < dateTime || ids.Contains(titulo)) continue;
 
                         string edicion = cuerpoTexto[0].Split(": ")[1];
 
                         GOLeyModel.Edicion = edicion;
                         GOLeyModel.FechaPublicacion = fecha;
 
-                        GOLeyModel.Titulo = await cuerpo.Locator("h6 b").InnerTextAsync();
+                        GOLeyModel.Titulo = titulo;
                         GOLeyModel.Descripcion = await cuerpo.Locator(".contentpaneopen p").InnerTextAsync();
 
                         var enlaces = await decreto.Locator("div .card .card-footer a").AllAsync();

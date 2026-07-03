@@ -7,29 +7,25 @@ using Rpa.Nucleo.Modelos;
 
 namespace Rpa.Infraestructura.SitiosWeb;
 
-public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
+public class ImpuestosExtractor : IExtractorWeb<ImpuestosModel>
 {
-    // Nombre único que identifica a este extractor en el sistema
     public string NombreSitio => "Servicio de Impuestos Nacionales | Entidad facilitadora del cumplimiento de las obligaciones tributarias";
     public string UrlSitioWeb => "https://www.impuestos.gob.bo/index.php/rnd-2026/";
 
-    public async Task<ResultadosModel<ImpuestosModel>> ExtraerDatosAsync()
+    public string SeleccionarFechaString(ImpuestosModel modelo) => modelo.Fecha ?? string.Empty;
+    public string SeleccionarIdentificadorUnico(ImpuestosModel modelo) => modelo.Titulo ?? string.Empty;
+
+    public async Task<ResultadosModel<ImpuestosModel>> ExtraerDatosAsync(long criterion, IEnumerable<string> ids)
     {
-        
-        var resultado = new ResultadosModel<ImpuestosModel>
+        var resultadosModel = new ResultadosModel<ImpuestosModel>
         {
             SitioWeb = NombreSitio,
             Status = "Procesado Exitosamente"
         };
 
-        // Inicializar Playwright y lanzar el navegador en modo oculto (Headless)
         using var playwright = await Playwright.CreateAsync();
-        await using var navegador = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-        {
-            Headless = true
-        });
+        await using var navegador = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
 
-        // Configurar el contexto con un User-Agent real para evitar bloqueos automatizados
         var contexto = await navegador.NewContextAsync(new BrowserNewContextOptions
         {
             UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -38,49 +34,33 @@ public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
 
         var pagina = await contexto.NewPageAsync();
 
+        // --- BLINDAJE CON REINTENTOS ASÍNCRONOS ---
+        int maxReintentos = 3;
+        int delayBaseMilisegundos = 2000;
+
+        for (int intento = 1; intento <= maxReintentos; intento++)
+        {
+            try
+            {
+                await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions { Timeout = 45000, WaitUntil = WaitUntilState.DOMContentLoaded });
+                break;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[REINTENTO {intento}/{maxReintentos}] Error navegando a Impuestos: {ex.Message}");
+                if (intento == maxReintentos) throw;
+                await Task.Delay(delayBaseMilisegundos * intento);
+            }
+        }
+
         try
         {
-            int maxReintentos = 3;
-            int intento = 0;
-            bool exitoNavegacion = false;
-
-            while (intento < maxReintentos && !exitoNavegacion)
-            {
-                try
-                {
-                    intento++;
-
-                    await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions
-                    {
-                        Timeout = 45000,
-                        WaitUntil = WaitUntilState.Load
-                    });
-
-                    exitoNavegacion = true;
-                }
-                catch (TimeoutException ex)
-                {
-                    Console.WriteLine($"[TIMEOUT] Intento {intento}/{maxReintentos} falló en {NombreSitio}. Detalle: {ex.Message}");
-
-                    if (intento >= maxReintentos)
-                    {
-                        throw new Exception($"Saturación de red: Imposible conectar a {NombreSitio} tras {maxReintentos} intentos.");
-                    }
-
-                    // Tiempo de espera exponencial: Intento 1 = 3s, Intento 2 = 6s
-                    int tiempoEspera = intento * 3000;
-                    Console.WriteLine($"Esperando {tiempoEspera / 1000} segundos antes de reintentar...");
-                    await Task.Delay(tiempoEspera);
-                }
-            }
-
-            // Forzar espera: Garantizar que la tabla y sus filas existan en el DOM antes de continuar
             var localizadorFilas = pagina.Locator(".rnd-table table tbody tr");
             await localizadorFilas.First.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 15000 });
 
             var filas = await localizadorFilas.AllAsync();
             var registrosExtraidos = new List<ImpuestosModel>();
-
+            
             foreach (var fila in filas)
             {
                 var celdas = await fila.Locator("td").AllAsync();
@@ -92,7 +72,7 @@ public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
 
                     // Condicional para verificar cuales son los documentos más recientes
                     // Cambiar DateTime.Today.Ticks por la fecha a evaluar 
-                    if (resultado.convertirHora(fecha) < resultado.convertirHora("2026-05-29"))
+                    if (resultadosModel.convertirHora(fecha) < criterion)
                     {
                         continue;
                     }
@@ -108,6 +88,7 @@ public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
     }");
 
                     textoTitulo = textoTitulo.Replace("\"", "").Trim();
+                    if(ids.Contains(textoTitulo)) continue;
 
                     string textoId = string.Empty;
                     string urlPdf = string.Empty;
@@ -135,7 +116,7 @@ public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
                         urlPdf = (await linkElement.First.GetAttributeAsync("href")) ?? string.Empty;
                     }
 
-                    var nuevoRegistro = new ImpuestosModel(NombreSitio)
+                    var nuevoRegistro = new ImpuestosModel()
                     {
                         Titulo = textoTitulo,
                         Id = textoId.Trim(),
@@ -147,11 +128,12 @@ public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
                 }
             }
 
-            resultado.ContenidoIdentificado = registrosExtraidos;
+            resultadosModel.ContenidoIdentificado = registrosExtraidos;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            resultado.Status = "Error en la Extracción del Sitio";
+            resultadosModel.ErrorMessage = ex.Message;
+            resultadosModel.Status = "Error";
             throw;
         }
         finally
@@ -159,6 +141,6 @@ public class ImpuestosExtractor : IExtractorWeb <ImpuestosModel>
             await contexto.CloseAsync();
         }
 
-        return resultado;
+        return resultadosModel;
     }
 }

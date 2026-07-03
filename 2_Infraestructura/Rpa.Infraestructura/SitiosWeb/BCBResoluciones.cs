@@ -7,17 +7,17 @@ using Rpa.Nucleo.Modelos;
 
 namespace Rpa.Infraestructura.SitiosWeb;
 
-public class BCBCircularesExternas : IExtractorWeb<BCBCircularesExternasModel>
+public class BCBResoluciones : IExtractorWeb<BCBResolucionesModel>
 {
-    public string NombreSitio => "BCB Circulares Externas";
-    public string UrlSitioWeb => "https://www.bcb.gob.bo/?q=circulares-externas";
+    public string NombreSitio => "BCB Resoluciones de directorio";
+    public string UrlSitioWeb => "https://www.bcb.gob.bo/?q=resoluciones-de-directorio";
 
-    public string SeleccionarFechaString(BCBCircularesExternasModel modelo) => modelo.Fecha ?? string.Empty;
-    public string SeleccionarIdentificadorUnico(BCBCircularesExternasModel modelo) => modelo.Titulo ?? string.Empty;
+    public string SeleccionarFechaString(BCBResolucionesModel modelo) => modelo.FechaPublicacion ?? string.Empty;
+    public string SeleccionarIdentificadorUnico(BCBResolucionesModel modelo) => modelo.Resolucion ?? string.Empty;
 
-    public async Task<ResultadosModel<BCBCircularesExternasModel>> ExtraerDatosAsync(long criterion, IEnumerable<string> ids)
+    public async Task<ResultadosModel<BCBResolucionesModel>> ExtraerDatosAsync(long criterion, IEnumerable<string> ids)
     {
-        ResultadosModel<BCBCircularesExternasModel> resultadosModel = new()
+        ResultadosModel<BCBResolucionesModel> resultadosModel = new()
         {
             SitioWeb = NombreSitio,
             Status = "Procesado exitosamente"
@@ -44,7 +44,7 @@ public class BCBCircularesExternas : IExtractorWeb<BCBCircularesExternasModel>
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[REINTENTO {intento}/{maxReintentos}] Error en BCB Circulares: {ex.Message}");
+                Console.WriteLine($"[REINTENTO {intento}/{maxReintentos}] Error en BCB Resoluciones: {ex.Message}");
                 if (intento == maxReintentos) throw;
                 await Task.Delay(2000 * intento);
             }
@@ -52,35 +52,35 @@ public class BCBCircularesExternas : IExtractorWeb<BCBCircularesExternasModel>
 
         try
         {
-            var selectorDesplegable = pagina.Locator("#edit-field-gestion-ce-value-value-year");
+            var selectorDesplegable = pagina.Locator("#edit-field-fecha-resolucion-value-value-year");
             await selectorDesplegable.SelectOptionAsync(new[] { "2026" });
-            var boton = pagina.Locator("#edit-submit-circulares-externas");
+            var boton = pagina.Locator("#edit-submit-resoluciones-de-directorio");
             await boton.ClickAsync();
             var resolucionesContent = pagina.Locator(".view-content");
             await resolucionesContent.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 10000 });
             var resoluciones = await resolucionesContent.Locator(".views-row").AllAsync();
-            if (resoluciones.Count > 0)
+
+            foreach (var resolucion in resoluciones)
             {
-                foreach (var resolucion in resoluciones)
+                var fechas = await resolucion.Locator("div .bcb_date span").AllAsync();
+                if (fechas.Count < 2) continue;
+
+                string fechaResolucion = (await fechas[0].InnerTextAsync()).Trim();
+                string fechaPublicacion = (await fechas[1].InnerTextAsync()).Trim();
+                string reso = (await resolucion.Locator("div .bcb_title a").InnerTextAsync()).Trim();
+
+                if (resultadosModel.convertirHora(fechaPublicacion) < criterion || ids.Contains(reso)) continue;
+
+                var bCBResolucionesModel = new BCBResolucionesModel
                 {
-                    string rawDate = await resolucion.Locator("div .bcb_date span").InnerTextAsync();
-                    string[] fechaCompleta = rawDate.Split("- ");
-                    string[] fechaLiteral = fechaCompleta[0].Split(", ");
-                    string titulo = (await resolucion.Locator("div .bcb_title").InnerTextAsync()).Trim();
-                    string fecha = (fechaLiteral[1] + " " + fechaLiteral[2] + fechaCompleta[1]).Trim();
+                    Resolucion = reso,
+                    FechaResolucion = fechaResolucion,
+                    FechaPublicacion = fechaPublicacion,
+                    Descripcion = await resolucion.Locator("div .bcb_content p").InnerTextAsync(),
+                    UrlPdf = await resolucion.Locator("div .bcb_adjunto strong a").GetAttributeAsync("href")
+                };
 
-                    if (resultadosModel.convertirHora(fecha) < criterion || ids.Contains(titulo)) continue;
-
-                    var bCBCircularesExternasModel = new BCBCircularesExternasModel
-                    {
-                        Fecha = fecha,
-                        Titulo = titulo,
-                        Contenido = await resolucion.Locator("div .bcb_content").InnerTextAsync(),
-                        UrlPdf = await resolucion.Locator("div .bcb_adjunto strong a").GetAttributeAsync("href")
-                    };
-
-                    resultadosModel.ContenidoIdentificado.Add(bCBCircularesExternasModel);
-                }
+                resultadosModel.ContenidoIdentificado.Add(bCBResolucionesModel);
             }
         }
         catch (Exception ex)

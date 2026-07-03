@@ -2,7 +2,6 @@ namespace Rpa.Nucleo.Modelos;
 
 public class ImpuestosModel
 {
-    public string? NombreWeb { get; set; }
     public string? Titulo { get; set; }
     public string? Fecha { get; set; }
     public string? Id { get; set; }
@@ -14,8 +13,4 @@ public class ImpuestosModel
     }
 
     // Constructor útil para cuando el scraper cree instancias nuevas
-    public ImpuestosModel(string nombreWeb)
-    {
-        NombreWeb = nombreWeb;
-    }
 }
