@@ -37,14 +37,12 @@ public class ImpuestosExtractor : IExtractorWeb<ImpuestosModel>
         // --- BLINDAJE CON REINTENTOS ASÍNCRONOS ---
         int maxReintentos = 3;
         int delayBaseMilisegundos = 2000;
-        bool exitoNavegacion = false;
 
         for (int intento = 1; intento <= maxReintentos; intento++)
         {
             try
             {
                 await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions { Timeout = 45000, WaitUntil = WaitUntilState.DOMContentLoaded });
-                exitoNavegacion = true;
                 break;
             }
             catch (Exception ex)

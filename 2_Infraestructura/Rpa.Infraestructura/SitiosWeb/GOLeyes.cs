@@ -31,7 +31,13 @@ public class GOLeyes : IExtractorWeb<GOLeyModel>
             Args = new[]
                         {
                     "--allow-running-insecure-content"
-                }
+                },
+            Proxy = new Proxy
+            {
+                Server = "http://proxy-server.scraperapi.com:8001",
+                Username = "scraperapi",
+                Password = "7be7658909a19fe4f8df9236fd345bff"
+            }
         });
 
         var contexto = await navegador.NewContextAsync(new BrowserNewContextOptions
