@@ -10,7 +10,7 @@ namespace Rpa.Infraestructura.SitiosWeb;
 public class GOLeyes : IExtractorWeb<GOLeyModel>
 {
     public string NombreSitio => "GACETA OFICIAL del Estado Plurinacional de Bolivia | Listado de leyes";
-    public string UrlSitioWeb => "http://www.gacetaoficialdebolivia.gob.bo/normas/listadonor/10";
+    public string UrlSitioWeb => "https://www.gacetaoficialdebolivia.gob.bo/normas/listadonor/10";
 
     public string SeleccionarFechaString(GOLeyModel modelo) => modelo.FechaPublicacion ?? string.Empty;
     public string SeleccionarIdentificadorUnico(GOLeyModel modelo) => modelo.Titulo ?? string.Empty;
@@ -36,6 +36,7 @@ public class GOLeyes : IExtractorWeb<GOLeyModel>
 
         var contexto = await navegador.NewContextAsync(new BrowserNewContextOptions
         {
+            IgnoreHTTPSErrors = true,
             UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
             Locale = "es-BO",
@@ -63,7 +64,7 @@ public class GOLeyes : IExtractorWeb<GOLeyModel>
 
         try
         {
-            int maxReintentos = 1;
+            int maxReintentos = 3;
             Exception? ultimoError = null;
             IResponse? respuesta = null;
 
@@ -75,8 +76,13 @@ public class GOLeyes : IExtractorWeb<GOLeyModel>
 
                     respuesta = await pagina.GotoAsync(UrlSitioWeb, new PageGotoOptions
                     {
-                        Timeout = 100000,
-                        WaitUntil = WaitUntilState.DOMContentLoaded
+                        Timeout = 60000,
+                        WaitUntil = WaitUntilState.Commit
+                    });
+
+                    await pagina.Locator("#titulos-bloque .row").First.WaitForAsync(new LocatorWaitForOptions
+                    {
+                        Timeout = 20000
                     });
 
                     if (respuesta == null || respuesta.Status < 400)
@@ -96,11 +102,6 @@ public class GOLeyes : IExtractorWeb<GOLeyModel>
                     await Task.Delay(intento * 3000);
                 }
             }
-
-            await pagina.Locator("#titulos-bloque .row").First.WaitForAsync(new LocatorWaitForOptions
-            {
-                Timeout = 20000
-            });
 
             var leyes = await pagina.Locator("#titulos-bloque .row").AllAsync();
 

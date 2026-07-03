@@ -51,12 +51,12 @@ public class Worker : BackgroundService
 
         // Ejecución secuencial sumamente limpia utilizando polimorfismo genérico
 
-        /* await ProcesarExtractorAsync(_impuestosExtractor);
-        await ProcesarExtractorAsync(_mefpExtractor); */
-        /* await ProcesarExtractorAsync(_goLeyes);
-        await ProcesarExtractorAsync(_goDecreto); */
+        await ProcesarExtractorAsync(_impuestosExtractor);
+        await ProcesarExtractorAsync(_mefpExtractor);
+        await ProcesarExtractorAsync(_goLeyes);
+        await ProcesarExtractorAsync(_goDecreto);
         await ProcesarExtractorAsync(_bcbCE);
-        /* await ProcesarExtractorAsync(_bcbR); */
+        await ProcesarExtractorAsync(_bcbR);
 
         _logger.LogInformation("=== Fin del ciclo único de extracción. Terminando contenedor de forma limpia. ===");
         Environment.Exit(0);
@@ -69,13 +69,11 @@ public class Worker : BackgroundService
     {
         try
         {
-            _logger.LogInformation("[ORQUESTADOR] Iniciando proceso para: [{Sitio}]", extractor.NombreSitio);
+            _logger.LogInformation("Iniciando proceso para: [{Sitio}]", extractor.NombreSitio);
             var modeloVacio = new ResultadosModel<T>();
 
-            // 1. Recuperar el último estado guardado en Azure
             var estadoActual = await _almacenamiento.ObtenerUltimoEstadoAsync<T>(extractor.NombreSitio, "");
 
-            // 2. Extraer la marca de tiempo de control dinámicamente
             long criterio = GestorEstadoRpa.ObtenerFechaCriterio(estadoActual, extractor);
 
             if (estadoActual != null)
@@ -86,7 +84,6 @@ public class Worker : BackgroundService
                 }
             }
 
-            // 3. Obtener el identificador del último registro de control para evitar duplicados en el mismo milisegundo
             var idsExcluidos = new List<string>();
             if (estadoActual?.ContenidoIdentificado?.Any() == true)
             {
@@ -101,16 +98,13 @@ public class Worker : BackgroundService
                 }
             }
 
-            // 4. Ejecutar el Web Scraper con los parámetros de rango dinámicos
-
             var resultadosNuevos = await extractor.ExtraerDatosAsync(criterio, idsExcluidos);
 
-            // 5. Si se identificó contenido de valor, rotar y guardar en Blob Storage
             if (estadoActual != null)
             {
                 if (resultadosNuevos?.ContenidoIdentificado?.Count > 0)
                 {
-                    _logger.LogInformation("[ORQUESTADOR] ¡Novedades detectadas ({Count})! Guardando y rotando estado para: {Sitio}",
+                    _logger.LogInformation("¡Novedades detectadas ({Count})! almacenando",
                         resultadosNuevos.ContenidoIdentificado.Count, extractor.NombreSitio);
                     await _almacenamiento.EliminarEstadoPorFechaAsync<T>(extractor.NombreSitio, estadoActual.FechaVerificacion);
                     await _almacenamiento.GuardarEstadoAsync(resultadosNuevos, extractor.NombreSitio, $"doc_{DateTime.UtcNow.Ticks}.json");
@@ -122,14 +116,14 @@ public class Worker : BackgroundService
             }
             else
             {
-                _logger.LogInformation("[ORQUESTADOR] ¡Novedades detectadas ({Count})! Guardando y rotando estado para: {Sitio}",
+                _logger.LogInformation("¡Novedades detectadas ({Count})! almacenando",
                 resultadosNuevos.ContenidoIdentificado.Count, extractor.NombreSitio);
                 await _almacenamiento.GuardarEstadoAsync(resultadosNuevos, extractor.NombreSitio, $"doc_{DateTime.UtcNow.Ticks}.json");
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[ERROR CRÍTICO] Falló la ejecución del extractor: {Sitio}", extractor.NombreSitio);
+            _logger.LogError(ex, "Falló la ejecución del extractor: {Sitio}", extractor.NombreSitio);
         }
     }
 }
