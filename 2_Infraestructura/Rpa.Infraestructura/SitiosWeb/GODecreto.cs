@@ -53,16 +53,6 @@ public class GODecreto : IExtractorWeb<GODecretoModel>
             }
         });
 
-        await contexto.RouteAsync("**/*", async ruta =>
-                    {
-                        string tipo = ruta.Request.ResourceType;
-
-                        if (tipo == "image" || tipo == "font" || tipo == "media")
-                            await ruta.AbortAsync();
-                        else
-                            await ruta.ContinueAsync();
-                    });
-
         var pagina = await contexto.NewPageAsync();
 
         pagina.SetDefaultTimeout(30000);

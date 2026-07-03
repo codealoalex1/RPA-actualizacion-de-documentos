@@ -53,10 +53,10 @@ public class Worker : BackgroundService
 
         await ProcesarExtractorAsync(_impuestosExtractor);
         await ProcesarExtractorAsync(_mefpExtractor);
-        await ProcesarExtractorAsync(_goLeyes);
-        await ProcesarExtractorAsync(_goDecreto);
         await ProcesarExtractorAsync(_bcbCE);
         await ProcesarExtractorAsync(_bcbR);
+        await ProcesarExtractorAsync(_goLeyes);
+        await ProcesarExtractorAsync(_goDecreto);
 
         _logger.LogInformation("=== Fin del ciclo único de extracción. Terminando contenedor de forma limpia. ===");
         Environment.Exit(0);
