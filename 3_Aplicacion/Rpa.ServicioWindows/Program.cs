@@ -23,7 +23,9 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddTransient<GODecreto>();
         services.AddTransient<GOLeyes>();
         services.AddTransient<BCBCircularesExternas>();
+        services.AddTransient<ASFICircularValoresExtractor>();
         services.AddTransient<BCBResoluciones>();
+        services.AddTransient<ASFICircularValoresExtractor>();
 
         services.AddHostedService<Worker>();
     })

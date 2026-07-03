@@ -23,6 +23,7 @@ public class Worker : BackgroundService
     private readonly GODecreto _goDecreto;
     private readonly GOLeyes _goLeyes;
     private readonly BCBCircularesExternas _bcbCE;
+    private readonly ASFICircularValoresExtractor _asfiCircularValores;
     private readonly BCBResoluciones _bcbR;
 
     public Worker(
@@ -33,6 +34,7 @@ public class Worker : BackgroundService
         GOLeyes gOLeyes,
         BCBCircularesExternas bCBCircularesExternas,
         BCBResoluciones bCBResoluciones,
+        ASFICircularValoresExtractor asfiCircularValores,
         IAlmacenamientoServicio almacenamientoBlob)
     {
         _logger = logger;
@@ -42,6 +44,7 @@ public class Worker : BackgroundService
         _goLeyes = gOLeyes;
         _bcbCE = bCBCircularesExternas;
         _bcbR = bCBResoluciones;
+        _asfiCircularValores = asfiCircularValores;
         _almacenamiento = almacenamientoBlob;
     }
 
@@ -57,6 +60,7 @@ public class Worker : BackgroundService
         await ProcesarExtractorAsync(_bcbR);
         await ProcesarExtractorAsync(_goLeyes);
         await ProcesarExtractorAsync(_goDecreto);
+        await ProcesarExtractorAsync(_asfiCircularValores);
 
         _logger.LogInformation("=== Fin del ciclo único de extracción. Terminando contenedor de forma limpia. ===");
         Environment.Exit(0);
