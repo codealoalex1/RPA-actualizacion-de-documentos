@@ -1,12 +1,15 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using Azure;
 using Azure.AI.OpenAI;
 using Docnet.Core;
 using Docnet.Core.Models;
 using OpenAI.Chat;
 using SkiaSharp;
-using Tesseract;
+using TesseractOCR;
+using TesseractOCR.Enums;
+using TesseractOCR.Enums;
 
 namespace Rpa.Infraestructura.Ocr
 {
@@ -14,14 +17,116 @@ namespace Rpa.Infraestructura.Ocr
     {
         public string Pdf { get; set; } = "";
         public string Image { get; set; } = "";
+        public Ocr() { }
 
-        /* Obtener las imagenes de los pdfs */
-        private static List<byte[]> ConvertirPdfAImagenes(string rutaPdf)
+        public async Task<byte[]> ObtenerPdfDesdeUrl(string urlPdf)
+        {
+            CancellationToken cancellationToken = new CancellationToken();
+            using (HttpClient client = new HttpClient())
+            {
+                client.Timeout = TimeSpan.FromSeconds(30);
+
+                try
+                {
+                    // GetByteArrayAsync descarga los bytes de forma segura
+                    Console.WriteLine(urlPdf);
+                    byte[] pdfBytes = await client.GetByteArrayAsync(urlPdf, cancellationToken);
+                    return pdfBytes;
+                }
+                catch (OperationCanceledException)
+                {
+                    Console.WriteLine("La descarga fue cancelada por tiempo de espera o por el usuario.");
+                    throw;
+                }
+            }
+        }
+
+        public async Task<List<byte[]>> ConvertirPdfAImagenes2(string rutaPdf)
+        {
+            if (!File.Exists(rutaPdf))
+            {
+                throw new Exception("No se encontró el pdf");
+            }
+
+            var listaImagenes = new List<byte[]>();
+
+            var docReader = DocLib.Instance;
+            var dimensionesAltaDefinicion = new PageDimensions(2479, 3508);
+
+            try
+            {
+
+                using (var docHandler = docReader.GetDocReader(rutaPdf, dimensionesAltaDefinicion))
+                {
+                    int conteoPaginas = docHandler.GetPageCount();
+
+                    for (int i = 0; i < conteoPaginas; i++)
+                    {
+                        using (var pageHandler = docHandler.GetPageReader(i))
+                        {
+                            // Obtenemos el ancho y alto real asignado a esta página escalada
+                            int width = pageHandler.GetPageWidth();
+                            int height = pageHandler.GetPageHeight();
+
+                            // Extraemos los bytes usando la sobrecarga base de flags
+                            var rawBytes = pageHandler.GetImage((RenderFlags)0);
+
+                            // Cálculo exacto del Stride basado en las dimensiones reales de lectura
+                            int bytesPerRow = width * 4;
+
+                            var srcInfo = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+                            var dstInfo = new SKImageInfo(width, height, SKColorType.Rgb888x, SKAlphaType.Opaque);
+
+                            using (var bitmapOrigen = new SKBitmap())
+                            using (var bitmapDestino = new SKBitmap(dstInfo))
+                            using (var canvas = new SKCanvas(bitmapDestino))
+                            {
+                                unsafe
+                                {
+                                    fixed (byte* pBytes = rawBytes)
+                                    {
+                                        bitmapOrigen.InstallPixels(srcInfo, (IntPtr)pBytes, bytesPerRow);
+                                    }
+                                }
+
+                                // Forzamos el fondo blanco nítido para un contraste absoluto
+                                canvas.Clear(SKColors.White);
+                                canvas.DrawBitmap(bitmapOrigen, 0, 0);
+                                canvas.Flush();
+
+                                using (var image = SKImage.FromBitmap(bitmapDestino))
+                                using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
+                                {
+                                    using (var memoryStream = new MemoryStream())
+                                    {
+                                        data.SaveTo(memoryStream);
+                                        listaImagenes.Add(memoryStream.ToArray());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                throw new Exception(ex.Message);
+            }
+
+            return listaImagenes;
+        }
+
+        public List<byte[]> ConvertirPdfAImagenes3(string rutaPdf)
         {
             var listaImagenes = new List<byte[]>();
 
             if (!File.Exists(rutaPdf))
                 throw new FileNotFoundException($"No se encontró el archivo PDF: {rutaPdf}");
+
+            /* string carpetaDebug = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PaginasOcr_Debug");
+            if (!Directory.Exists(carpetaDebug)) Directory.CreateDirectory(carpetaDebug); */
 
             var docReader = DocLib.Instance;
 
@@ -71,6 +176,13 @@ namespace Rpa.Infraestructura.Ocr
                             using (var image = SKImage.FromBitmap(bitmapDestino))
                             using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
                             {
+                                // Guardado físico en tu carpeta local para control visual inmediato
+                                /* string rutaImagenDebug = Path.Combine(carpetaDebug, $"pagina_{i + 1}.png");
+                                using (var fileStream = File.OpenWrite(rutaImagenDebug))
+                                {
+                                    data.SaveTo(fileStream);
+                                } */
+
                                 using (var memoryStream = new MemoryStream())
                                 {
                                     data.SaveTo(memoryStream);
@@ -85,62 +197,132 @@ namespace Rpa.Infraestructura.Ocr
             return listaImagenes;
         }
 
-        /* Procesar cada una de las imagenes de img a lista de bytes */
-        private static string ProcesarOcrLocal(List<byte[]> imagenes, string rutaTessData)
+        /* Obtener las imagenes de los pdfs */
+        public async Task<List<byte[]>> ConvertirPdfAImagenes(byte[] pdfBytes)
         {
-            var textoAcumulado = new StringBuilder();
+            var listaImagenes = new List<byte[]>();
+            string rutaPdf = Path.Combine(Path.GetTempPath(), $"doc_{DateTime.UtcNow.Ticks}.pdf");
 
-            /* Crear carpeta de texto */
-            string carpetaDebug = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Textos_pdf");
-            if (!Directory.Exists(carpetaDebug)) Directory.CreateDirectory(carpetaDebug);
+            var docReader = DocLib.Instance;
+            var dimensionesAltaDefinicion = new PageDimensions(2479, 3508);
 
-            // Inicializamos el motor físico de Tesseract apuntando a nuestros diccionarios y fijando el idioma "spa"
-            using (var motorOcr = new TesseractEngine(rutaTessData, "spa", EngineMode.Default))
+            try
             {
-                int paginaActual = 1;
-                string rutaTxtResultado = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resultado_OCR0.txt");
-                /* int op = 0; */
+                await File.WriteAllBytesAsync(rutaPdf, pdfBytes);
 
-                motorOcr.SetVariable("tessedit_pageseg_mode", "3");
-                motorOcr.SetVariable("preserve_interword_spaces", "1");
-                foreach (var bytesImagen in imagenes)
+                using (var docHandler = docReader.GetDocReader(rutaPdf, dimensionesAltaDefinicion))
                 {
-                    using (var pixImage = Pix.LoadFromMemory(bytesImagen))
+                    int conteoPaginas = docHandler.GetPageCount();
+
+                    for (int i = 0; i < conteoPaginas; i++)
                     {
-                        using (var paginaProcesada = motorOcr.Process(pixImage))
+                        using (var pageHandler = docHandler.GetPageReader(i))
                         {
-                            string textoDeLaPagina = paginaProcesada.GetText();
-                            textoAcumulado.AppendLine($"--- INICIO PÁGINA {paginaActual} ---");
-                            textoAcumulado.AppendLine(textoDeLaPagina);
-                            textoAcumulado.AppendLine($"--- FIN PÁGINA {paginaActual} ---\n");
-                            paginaActual++;
+                            // Obtenemos el ancho y alto real asignado a esta página escalada
+                            int width = pageHandler.GetPageWidth();
+                            int height = pageHandler.GetPageHeight();
+
+                            // Extraemos los bytes usando la sobrecarga base de flags
+                            var rawBytes = pageHandler.GetImage((RenderFlags)0);
+
+                            // Cálculo exacto del Stride basado en las dimensiones reales de lectura
+                            int bytesPerRow = width * 4;
+
+                            var srcInfo = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+                            var dstInfo = new SKImageInfo(width, height, SKColorType.Rgb888x, SKAlphaType.Opaque);
+
+                            using (var bitmapOrigen = new SKBitmap())
+                            using (var bitmapDestino = new SKBitmap(dstInfo))
+                            using (var canvas = new SKCanvas(bitmapDestino))
+                            {
+                                unsafe
+                                {
+                                    fixed (byte* pBytes = rawBytes)
+                                    {
+                                        bitmapOrigen.InstallPixels(srcInfo, (IntPtr)pBytes, bytesPerRow);
+                                    }
+                                }
+
+                                // Forzamos el fondo blanco nítido para un contraste absoluto
+                                canvas.Clear(SKColors.White);
+                                canvas.DrawBitmap(bitmapOrigen, 0, 0);
+                                canvas.Flush();
+
+                                using (var image = SKImage.FromBitmap(bitmapDestino))
+                                using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
+                                {
+                                    using (var memoryStream = new MemoryStream())
+                                    {
+                                        data.SaveTo(memoryStream);
+                                        listaImagenes.Add(memoryStream.ToArray());
+                                    }
+                                }
+                            }
                         }
                     }
-
-                    /* Añadir documentos resultado en .txt */
-                    /* if (paginaActual % 5 == 0)
-                    {
-                        op = (paginaActual / 5) - 1;
-                        if (File.Exists(rutaTxtResultado)) File.Delete(rutaTxtResultado);
-                        File.WriteAllText(rutaTxtResultado, textoAcumulado.ToString(), Encoding.UTF8);
-                        File.Move(rutaTxtResultado, $"{carpetaDebug}\\Resultado_OCR{op}.txt");
-                        rutaTxtResultado = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"Resultado_OCR{paginaActual / 5}.txt");
-                        textoAcumulado = new StringBuilder();
-                    }
-                    if (paginaActual - 1 == imagenes.Count)
-                    {
-                        op++;
-                        File.WriteAllText(rutaTxtResultado, textoAcumulado.ToString(), Encoding.UTF8);
-                        File.Move(rutaTxtResultado, $"{carpetaDebug}\\Resultado_OCR{op}.txt");
-                    } */
                 }
+
+            }
+            catch (Exception ex)
+            {
+                throw new Exception(ex.Message);
             }
 
-            return textoAcumulado.ToString();
+            return listaImagenes;
         }
-        
+
+        /* Procesar cada una de las imagenes de img a lista de bytes */
+        public string ProcesarOcrLocal(List<byte[]> imagenes, string rutaTessData)
+        {
+            var textoAcumulado = new StringBuilder();
+            try
+            {
+                using (var motorOcr = new Engine(rutaTessData, "spa", EngineMode.Default))
+                {
+                    int paginaActual = 1;
+                    motorOcr.SetVariable("tessedit_pageseg_mode", "3");
+                    motorOcr.SetVariable("preserve_interword_spaces", "1");
+                    foreach (var bytesImagen in imagenes)
+                    {
+                        using (var pixImage = TesseractOCR.Pix.Image.LoadFromMemory(bytesImagen))
+                        {
+                            using (var paginaProcesada = motorOcr.Process(pixImage))
+                            {
+                                string textoDeLaPagina = paginaProcesada.Text;
+                                textoAcumulado.AppendLine($"--- INICIO PÁGINA {paginaActual} ---");
+                                string patron = @"^(.*?)(OFICINA CENTRAL)";
+                                Match match = Regex.Match(textoDeLaPagina, patron);
+                                if (match.Success)
+                                {
+                                    textoAcumulado.AppendLine(match.Groups[1].Value);   
+                                }
+                                textoAcumulado.AppendLine($"--- FIN PÁGINA {paginaActual} ---\n");
+                                paginaActual++;
+                            }
+                        }
+                    }
+                }
+
+                return textoAcumulado.ToString();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("--- ERROR PRINCIPAL ---");
+                Console.WriteLine(ex.Message);
+
+                // ESTO TE MOSTRARÁ EL VERDADERO ERROR OCULTO (Ej: DllNotFoundException: libtesseract...)
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine("\n--- CAUSA REAL (INNER EXCEPTION) ---");
+                    Console.WriteLine(ex.InnerException.Message);
+                    Console.WriteLine(ex.InnerException.StackTrace);
+                }
+                return ex.Message;
+            }
+        }
+
         /* Procesar los byes de la imagen */
-        private static string ProcesarOcrImagen(byte[] bytesImagen, string rutaTessData)
+        /* public string ProcesarOcrImagen(byte[] bytesImagen, string rutaTessData)
         {
             Console.WriteLine("[1/2] Re-renderizando imagen en formato de alta definición (Lienzo Limpio)...");
 
@@ -202,9 +384,9 @@ namespace Rpa.Infraestructura.Ocr
 
             return textoExtraido.ToString();
         }
-
+ */
         /* Enviar el texto extraido de las imagenes al modelo en Azure Open Ai */
-        private static async Task<string> GenerarResumenConOpenAIAsync(string textoOcr, string
+        public async Task<string> GenerarResumenConOpenAIAsync(string textoOcr, string
         azureEndpoint, string azureApiKey, string deploymentName)
         {
             Console.WriteLine("\n[4/4] Conectando con Azure OpenAI para generar el resumen ejecutivo...");
@@ -244,9 +426,9 @@ Presenta la información de forma clara, limpia, usando viñetas y títulos en M
                 return $"Error al conectar con Azure OpenAI: {ex.Message}";
             }
         }
-        
+
         /* Definir que sistema operativo se está utilizando Linux o Windows */
-        private static string GetTessDataPath()
+        public string GetTessDataPath()
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -254,7 +436,7 @@ Presenta la información de forma clara, limpia, usando viñetas y títulos en M
             }
             else
             {
-                return "/usr/share/tesseract-ocr/4.00/tessdata";
+                return "/usr/share/tesseract-ocr/5/tessdata/";
             }
         }
     }
